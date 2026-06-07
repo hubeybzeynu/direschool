@@ -1,12 +1,17 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
+import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { SCHOOLS } from "@/lib/schools";
+import { ST_THERESA_ID } from "@/lib/st-theresa";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { GraduationCap, LogOut, Search } from "lucide-react";
+import { GraduationCap, LogOut, Search, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { checkTelegramLink, recordLogin } from "@/lib/telegram.functions";
 
 export const Route = createFileRoute("/_authenticated/schools")({
   head: () => ({
@@ -21,11 +26,23 @@ export const Route = createFileRoute("/_authenticated/schools")({
 function SchoolsPage() {
   const navigate = useNavigate();
   const [q, setQ] = useState("");
+  const check = useServerFn(checkTelegramLink);
+  const record = useServerFn(recordLogin);
+
+  const linkQ = useQuery({ queryKey: ["tg-status"], queryFn: () => check({}) });
+  useEffect(() => {
+    if (linkQ.data && !linkQ.data.linked) navigate({ to: "/connect-telegram" });
+  }, [linkQ.data, navigate]);
+
+  useEffect(() => {
+    record({}).catch(() => {});
+  }, [record]);
 
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
-    if (!term) return SCHOOLS;
-    return SCHOOLS.filter((s) => s.name.toLowerCase().includes(term));
+    const list = term ? SCHOOLS.filter((s) => s.name.toLowerCase().includes(term)) : SCHOOLS;
+    // Put St. Theresa first
+    return list.slice().sort((a, b) => (a.id === ST_THERESA_ID ? -1 : b.id === ST_THERESA_ID ? 1 : 0));
   }, [q]);
 
   async function handleLogout() {
@@ -47,9 +64,15 @@ function SchoolsPage() {
               <p className="text-xs text-muted-foreground">Choose a school</p>
             </div>
           </Link>
-          <Button variant="outline" size="sm" onClick={handleLogout}>
-            <LogOut className="h-4 w-4 mr-2" /> Log out
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button asChild variant="ghost" size="sm">
+              <Link to="/admin"><ShieldCheck className="h-4 w-4 mr-1" /> Admin</Link>
+            </Button>
+            <ThemeToggle />
+            <Button variant="outline" size="sm" onClick={handleLogout}>
+              <LogOut className="h-4 w-4 mr-2" /> Log out
+            </Button>
+          </div>
         </div>
       </header>
 
@@ -84,7 +107,9 @@ function SchoolsPage() {
                   </div>
                   <div className="min-w-0">
                     <p className="font-medium text-foreground break-words">{s.name}</p>
-                    <p className="text-xs text-muted-foreground mt-1">Dire Dawa</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Dire Dawa {s.id === ST_THERESA_ID && <span className="text-primary font-medium">• Live data</span>}
+                    </p>
                   </div>
                 </div>
               </Card>

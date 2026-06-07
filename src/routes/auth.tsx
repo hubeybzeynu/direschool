@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
 import { GraduationCap, Loader2 } from "lucide-react";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
@@ -28,7 +29,7 @@ function AuthPage() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
-      if (data.session) navigate({ to: "/schools" });
+      if (data.session) navigate({ to: "/connect-telegram" });
     });
   }, [navigate]);
 
@@ -43,7 +44,7 @@ function AuthPage() {
       return;
     }
     if (res.redirected) return;
-    navigate({ to: "/schools" });
+    navigate({ to: "/connect-telegram" });
   }
 
   async function handleEmail(e: React.FormEvent) {
@@ -61,7 +62,7 @@ function AuthPage() {
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
-        navigate({ to: "/schools" });
+        navigate({ to: "/connect-telegram" });
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Authentication failed");

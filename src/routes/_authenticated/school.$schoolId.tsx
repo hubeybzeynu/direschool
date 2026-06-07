@@ -1,20 +1,23 @@
 import { createFileRoute, Link, notFound, useNavigate } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
+import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import { getSchoolById } from "@/lib/schools";
+import { isStTheresa } from "@/lib/st-theresa";
 import { supabase } from "@/integrations/supabase/client";
+import { checkTelegramLink } from "@/lib/telegram.functions";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/theme-toggle";
 import {
-  ArrowLeft,
-  GraduationCap,
-  LogOut,
-  Users,
-  ClipboardList,
-  Trophy,
-  CalendarCheck2,
-  BookOpen,
-  Megaphone,
+  ArrowLeft, GraduationCap, LogOut, Users, ClipboardList, Trophy,
+  BookOpen, Award, Home, ScrollText,
 } from "lucide-react";
 import { toast } from "sonner";
+import {
+  HomeSection, TextbooksSection, StudentsSection, MidExamSection,
+  FinalExamSection, ReportCardSection, MinistrySection,
+} from "@/components/st-theresa/sections";
 
 export const Route = createFileRoute("/_authenticated/school/$schoolId")({
   loader: ({ params }) => {
@@ -47,18 +50,28 @@ export const Route = createFileRoute("/_authenticated/school/$schoolId")({
   component: SchoolPage,
 });
 
-const SECTIONS = [
-  { key: "students", title: "Students", desc: "Roster of enrolled students.", icon: Users },
-  { key: "mid-results", title: "Mid Results", desc: "Mid-term grades and reports.", icon: ClipboardList },
-  { key: "final-results", title: "Final Results", desc: "End-of-term final grades.", icon: Trophy },
-  { key: "attendance", title: "Attendance", desc: "Daily attendance records.", icon: CalendarCheck2 },
-  { key: "subjects", title: "Subjects", desc: "Subjects taught at the school.", icon: BookOpen },
-  { key: "announcements", title: "Announcements", desc: "News and notices for the school.", icon: Megaphone },
+const TABS = [
+  { key: "home", title: "Home", icon: Home, render: () => <HomeSection /> },
+  { key: "textbooks", title: "Textbooks", icon: BookOpen, render: () => <TextbooksSection /> },
+  { key: "students", title: "Students", icon: Users, render: () => <StudentsSection /> },
+  { key: "mid", title: "Mid Exam", icon: ClipboardList, render: () => <MidExamSection /> },
+  { key: "final", title: "Final Exam", icon: Trophy, render: () => <FinalExamSection /> },
+  { key: "report", title: "Report Card", icon: ScrollText, render: () => <ReportCardSection /> },
+  { key: "ministry", title: "Ministry", icon: Award, render: () => <MinistrySection /> },
 ] as const;
 
 function SchoolPage() {
   const { school } = Route.useLoaderData();
   const navigate = useNavigate();
+  const stt = isStTheresa(school.id);
+  const [tab, setTab] = useState<string>("home");
+
+  // Telegram-link gate
+  const check = useServerFn(checkTelegramLink);
+  const linkQ = useQuery({ queryKey: ["tg-status"], queryFn: () => check({}) });
+  useEffect(() => {
+    if (linkQ.data && !linkQ.data.linked) navigate({ to: "/connect-telegram" });
+  }, [linkQ.data, navigate]);
 
   async function handleLogout() {
     const { error } = await supabase.auth.signOut();
@@ -66,53 +79,81 @@ function SchoolPage() {
     else navigate({ to: "/auth" });
   }
 
-  return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b">
-        <div className="mx-auto max-w-6xl px-4 py-4 flex items-center justify-between gap-3">
-          <Link to="/schools" className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
-            <ArrowLeft className="h-4 w-4" />
-            All schools
-          </Link>
-          <Button variant="outline" size="sm" onClick={handleLogout}>
-            <LogOut className="h-4 w-4 mr-2" /> Log out
-          </Button>
-        </div>
-      </header>
-
-      <main className="mx-auto max-w-6xl px-4 py-10">
-        <div className="flex items-start gap-4">
-          <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-primary text-primary-foreground">
+  if (!stt) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Header onLogout={handleLogout} />
+        <main className="mx-auto max-w-4xl px-4 py-16 text-center">
+          <div className="inline-flex h-14 w-14 items-center justify-center rounded-xl bg-primary text-primary-foreground mb-4">
             <GraduationCap className="h-7 w-7" />
           </div>
-          <div>
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">Dire Dawa</p>
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">{school.name}</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold">{school.name}</h1>
+          <p className="text-sm text-muted-foreground mt-2">Dire Dawa</p>
+          <Card className="p-10 mt-8">
+            <p className="font-medium">No data yet</p>
+            <p className="text-sm text-muted-foreground mt-1">Data for this school will be added later.</p>
+          </Card>
+        </main>
+      </div>
+    );
+  }
+
+  const active = TABS.find(t => t.key === tab) ?? TABS[0];
+  return (
+    <div className="min-h-screen" style={{ background: "var(--gradient-bg)" }}>
+      <Header onLogout={handleLogout}>
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+            <GraduationCap className="h-5 w-5" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold leading-tight truncate">{school.name}</p>
+            <p className="text-xs text-muted-foreground">Dire Dawa • Grade 9</p>
           </div>
         </div>
+      </Header>
 
-        <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {SECTIONS.map((s) => (
-            <Card key={s.key} className="p-5">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary/10 text-primary">
-                  <s.icon className="h-5 w-5" />
-                </div>
-                <div>
-                  <h2 className="font-semibold">{s.title}</h2>
-                  <p className="text-xs text-muted-foreground">{s.desc}</p>
-                </div>
-              </div>
-              <div className="mt-5 rounded-md border border-dashed p-6 text-center">
-                <p className="text-sm font-medium text-foreground">No data yet</p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Data for this school will be added later.
-                </p>
-              </div>
-            </Card>
+      <nav className="border-b bg-background/60 backdrop-blur sticky top-0 z-10">
+        <div className="mx-auto max-w-7xl px-4 flex gap-1 overflow-x-auto">
+          {TABS.map(t => (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              className={`flex items-center gap-2 px-4 py-3 text-sm whitespace-nowrap border-b-2 transition-colors ${
+                tab === t.key
+                  ? "border-primary text-primary font-medium"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <t.icon className="h-4 w-4" /> {t.title}
+            </button>
           ))}
         </div>
+      </nav>
+
+      <main className="mx-auto max-w-7xl px-4 py-8">
+        {active.render()}
       </main>
     </div>
+  );
+}
+
+function Header({ onLogout, children }: { onLogout: () => void; children?: React.ReactNode }) {
+  return (
+    <header className="border-b">
+      <div className="mx-auto max-w-7xl px-4 py-3 flex items-center justify-between gap-3">
+        <Link to="/schools" className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground shrink-0">
+          <ArrowLeft className="h-4 w-4" />
+          <span className="hidden sm:inline">All schools</span>
+        </Link>
+        <div className="flex-1 flex justify-center min-w-0">{children}</div>
+        <div className="flex items-center gap-1 shrink-0">
+          <ThemeToggle />
+          <Button variant="outline" size="sm" onClick={onLogout}>
+            <LogOut className="h-4 w-4 sm:mr-2" /><span className="hidden sm:inline">Log out</span>
+          </Button>
+        </div>
+      </div>
+    </header>
   );
 }
