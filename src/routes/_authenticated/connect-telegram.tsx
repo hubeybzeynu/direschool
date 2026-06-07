@@ -14,7 +14,7 @@ export const Route = createFileRoute("/_authenticated/connect-telegram")({
   component: ConnectTg,
 });
 
-const BOT_USERNAME = "Grade9StsBot"; // change in BotFather if different
+const BOT_USERNAME = "drschoolhubbot";
 
 function ConnectTg() {
   const navigate = useNavigate();
