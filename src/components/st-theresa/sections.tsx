@@ -130,9 +130,9 @@ export function StudentsSection() {
   );
 }
 
-function ResultsList({ rows, emptyLabel }: { rows: Array<{ student_name: string; result_image_url: string; answer_image_url?: string }>, emptyLabel: string }) {
+function ResultsList({ rows, emptyLabel }: { rows: Array<{ student_name?: string | null; result_image_url: string; answer_image_url?: string | null }>, emptyLabel: string }) {
   const [q, setQ] = useState("");
-  const filtered = rows.filter(r => r.student_name?.toLowerCase().includes(q.toLowerCase()));
+  const filtered = rows.filter(r => (r.student_name ?? "").toLowerCase().includes(q.toLowerCase()));
   if (rows.length === 0) {
     return (
       <Card className="p-10 text-center">
