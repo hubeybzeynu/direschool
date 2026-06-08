@@ -14,6 +14,45 @@ export type Database = {
   }
   public: {
     Tables: {
+      final_results: {
+        Row: {
+          answer_image_url: string | null
+          created_at: string
+          grade_group: string | null
+          id: string
+          result_image_url: string
+          student_id: string
+          student_name: string | null
+          student_password: string | null
+          subject: string | null
+          updated_at: string
+        }
+        Insert: {
+          answer_image_url?: string | null
+          created_at?: string
+          grade_group?: string | null
+          id?: string
+          result_image_url: string
+          student_id: string
+          student_name?: string | null
+          student_password?: string | null
+          subject?: string | null
+          updated_at?: string
+        }
+        Update: {
+          answer_image_url?: string | null
+          created_at?: string
+          grade_group?: string | null
+          id?: string
+          result_image_url?: string
+          student_id?: string
+          student_name?: string | null
+          student_password?: string | null
+          subject?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       login_events: {
         Row: {
           created_at: string
@@ -38,6 +77,45 @@ export type Database = {
         }
         Relationships: []
       }
+      mid_results: {
+        Row: {
+          answer_image_url: string | null
+          created_at: string
+          grade_group: string | null
+          id: string
+          result_image_url: string
+          student_id: string
+          student_name: string | null
+          student_password: string | null
+          subject: string | null
+          updated_at: string
+        }
+        Insert: {
+          answer_image_url?: string | null
+          created_at?: string
+          grade_group?: string | null
+          id?: string
+          result_image_url: string
+          student_id: string
+          student_name?: string | null
+          student_password?: string | null
+          subject?: string | null
+          updated_at?: string
+        }
+        Update: {
+          answer_image_url?: string | null
+          created_at?: string
+          grade_group?: string | null
+          id?: string
+          result_image_url?: string
+          student_id?: string
+          student_name?: string | null
+          student_password?: string | null
+          subject?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       portal_admins: {
         Row: {
           created_at: string
@@ -50,6 +128,87 @@ export type Database = {
         Update: {
           created_at?: string
           email?: string
+        }
+        Relationships: []
+      }
+      report_cards: {
+        Row: {
+          age: number | null
+          card_password: string | null
+          conduct: Json
+          created_at: string
+          days_absent: Json
+          days_present: Json
+          detained_in_grade: string | null
+          grade: string | null
+          house_no: string | null
+          id: string
+          kebele: string | null
+          promoted_to: string | null
+          rank: Json
+          remarks: string | null
+          school_year: string | null
+          sex: string | null
+          student_id: string
+          student_name: string | null
+          subjects: Json
+          teacher_name: string | null
+          times_tardy: Json
+          total_academic_days: Json
+          total_students: number | null
+          updated_at: string
+        }
+        Insert: {
+          age?: number | null
+          card_password?: string | null
+          conduct?: Json
+          created_at?: string
+          days_absent?: Json
+          days_present?: Json
+          detained_in_grade?: string | null
+          grade?: string | null
+          house_no?: string | null
+          id?: string
+          kebele?: string | null
+          promoted_to?: string | null
+          rank?: Json
+          remarks?: string | null
+          school_year?: string | null
+          sex?: string | null
+          student_id: string
+          student_name?: string | null
+          subjects?: Json
+          teacher_name?: string | null
+          times_tardy?: Json
+          total_academic_days?: Json
+          total_students?: number | null
+          updated_at?: string
+        }
+        Update: {
+          age?: number | null
+          card_password?: string | null
+          conduct?: Json
+          created_at?: string
+          days_absent?: Json
+          days_present?: Json
+          detained_in_grade?: string | null
+          grade?: string | null
+          house_no?: string | null
+          id?: string
+          kebele?: string | null
+          promoted_to?: string | null
+          rank?: Json
+          remarks?: string | null
+          school_year?: string | null
+          sex?: string | null
+          student_id?: string
+          student_name?: string | null
+          subjects?: Json
+          teacher_name?: string | null
+          times_tardy?: Json
+          total_academic_days?: Json
+          total_students?: number | null
+          updated_at?: string
         }
         Relationships: []
       }
