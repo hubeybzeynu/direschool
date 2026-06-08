@@ -151,7 +151,7 @@ function ResultsList({ rows, emptyLabel }: { rows: Array<{ student_name?: string
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {filtered.map((r, i) => (
           <Card key={i} className="overflow-hidden">
-            <img src={r.result_image_url} alt={r.student_name} className="w-full" loading="lazy" />
+            <img src={r.result_image_url} alt={r.student_name ?? ""} className="w-full" loading="lazy" />
             <div className="p-3">
               <p className="font-semibold text-sm">{r.student_name}</p>
               {r.answer_image_url && (
