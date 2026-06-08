@@ -1,13 +1,12 @@
 import { students } from "@/data/students";
 import { textbookContentIndex, textbookPageInfo } from "@/data/textbook";
 import { resultImages, nameToIdMap } from "@/data/ministry";
-import reportCards from "@/data/report_cards.json";
-import finalResults from "@/data/final_results.json";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
 import { GraduationCap, BookOpen, FileText, Award, ScrollText, Building2, Search } from "lucide-react";
 
 export function HomeSection() {
@@ -167,16 +166,56 @@ function ResultsList({ rows, emptyLabel }: { rows: Array<{ student_name: string;
 }
 
 export function MidExamSection() {
-  return <ResultsList rows={[]} emptyLabel="Mid Exam Results" />;
+  return <ExamResults table="mid_results" emptyLabel="Mid Exam Results" />;
 }
 
 export function FinalExamSection() {
-  return <ResultsList rows={finalResults as any} emptyLabel="Final Exam Results" />;
+  return <ExamResults table="final_results" emptyLabel="Final Exam Results" />;
+}
+
+type ExamRow = {
+  id: string; student_id: string; subject: string | null;
+  grade_group: string | null; result_image_url: string;
+  answer_image_url: string | null; student_name: string | null;
+};
+
+function ExamResults({ table, emptyLabel }: { table: "mid_results" | "final_results"; emptyLabel: string }) {
+  const [rows, setRows] = useState<ExamRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      const { data } = await supabase.from(table).select("*").order("created_at", { ascending: false });
+      if (active) { setRows((data as ExamRow[]) ?? []); setLoading(false); }
+    };
+    load();
+    const ch = supabase.channel(`${table}-feed`)
+      .on("postgres_changes", { event: "*", schema: "public", table }, load)
+      .subscribe();
+    return () => { active = false; supabase.removeChannel(ch); };
+  }, [table]);
+  if (loading) return <Card className="p-10 text-center text-sm text-muted-foreground">Loading…</Card>;
+  return <ResultsList rows={rows} emptyLabel={emptyLabel} />;
 }
 
 export function ReportCardSection() {
   const [q, setQ] = useState("");
-  const cards = (reportCards as any[]).filter(c => c.student_name?.toLowerCase().includes(q.toLowerCase()));
+  const [allCards, setAllCards] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      const { data } = await supabase.from("report_cards").select("*").order("created_at", { ascending: false });
+      if (active) { setAllCards(data ?? []); setLoading(false); }
+    };
+    load();
+    const ch = supabase.channel("report_cards-feed")
+      .on("postgres_changes", { event: "*", schema: "public", table: "report_cards" }, load)
+      .subscribe();
+    return () => { active = false; supabase.removeChannel(ch); };
+  }, []);
+  const cards = allCards.filter(c => c.student_name?.toLowerCase().includes(q.toLowerCase()));
+  if (loading) return <Card className="p-10 text-center text-sm text-muted-foreground">Loading…</Card>;
   return (
     <div className="space-y-4">
       <div className="relative max-w-md">
