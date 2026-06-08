@@ -61,6 +61,17 @@ export const recordLogin = createServerFn({ method: "POST" })
     const email = (claims as any).email ?? null;
     const name = (claims as any).user_metadata?.full_name ?? (claims as any).name ?? null;
     await supabase.from("login_events").insert({ user_id: userId, user_email: email, user_name: name });
+    // Notify admin via Telegram
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+    if (token) {
+      const adminChat = 6218343992;
+      const text = `🔐 New portal login\nEmail: <b>${email ?? "(none)"}</b>\nName: ${name ?? "-"}\nTime: ${new Date().toISOString()}`;
+      await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: adminChat, text, parse_mode: "HTML" }),
+      }).catch(() => {});
+    }
     return { ok: true };
   });
 

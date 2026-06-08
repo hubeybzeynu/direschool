@@ -116,6 +116,44 @@ export type Database = {
         }
         Relationships: []
       }
+      ministry_results: {
+        Row: {
+          created_at: string
+          download_url: string | null
+          registration_no: string
+          result_image_url: string
+          school_id: string | null
+          student_name: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          download_url?: string | null
+          registration_no: string
+          result_image_url: string
+          school_id?: string | null
+          student_name?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          download_url?: string | null
+          registration_no?: string
+          result_image_url?: string
+          school_id?: string | null
+          student_name?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ministry_results_school_id_fkey"
+            columns: ["school_id"]
+            isOneToOne: false
+            referencedRelation: "schools"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       portal_admins: {
         Row: {
           created_at: string
@@ -211,6 +249,92 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      schools: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean
+          name: string
+          rating: number | null
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id: string
+          is_active?: boolean
+          name: string
+          rating?: number | null
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          rating?: number | null
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      students: {
+        Row: {
+          age: number | null
+          created_at: string
+          download_url: string | null
+          english_name: string | null
+          gender: string | null
+          id: number
+          image_url: string | null
+          instagram: string | null
+          name: string
+          school_id: string
+          section: string | null
+          telegram: string | null
+          updated_at: string
+        }
+        Insert: {
+          age?: number | null
+          created_at?: string
+          download_url?: string | null
+          english_name?: string | null
+          gender?: string | null
+          id: number
+          image_url?: string | null
+          instagram?: string | null
+          name: string
+          school_id: string
+          section?: string | null
+          telegram?: string | null
+          updated_at?: string
+        }
+        Update: {
+          age?: number | null
+          created_at?: string
+          download_url?: string | null
+          english_name?: string | null
+          gender?: string | null
+          id?: number
+          image_url?: string | null
+          instagram?: string | null
+          name?: string
+          school_id?: string
+          section?: string | null
+          telegram?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "students_school_id_fkey"
+            columns: ["school_id"]
+            isOneToOne: false
+            referencedRelation: "schools"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       telegram_links: {
         Row: {
