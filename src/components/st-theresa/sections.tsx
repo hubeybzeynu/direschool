@@ -5,9 +5,13 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { GraduationCap, BookOpen, FileText, Award, ScrollText, Building2, Search } from "lucide-react";
+import { GraduationCap, BookOpen, FileText, Award, ScrollText, Building2, Search, X, ArrowLeft, Download, Dumbbell, Activity, FileQuestion } from "lucide-react";
+
+const GH_RAW = "https://raw.githubusercontent.com/hubeybzeynu/grade9sts/main";
+export const ministryImageUrl = (path: string) => path.startsWith("http") ? path : `${GH_RAW}/public${path}`;
+const textbookPdfUrl = (slug: string) => `${GH_RAW}/public/textbooks/${slug}_grade_9.pdf`;
 
 export function HomeSection() {
   const totalStudents = students.length;
@@ -45,41 +49,121 @@ export function HomeSection() {
 }
 
 export function TextbooksSection() {
-  const subjects = Object.keys(textbookContentIndex);
-  const [active, setActive] = useState(subjects[0]);
-  const info = textbookPageInfo[active];
-  const items = textbookContentIndex[active] ?? [];
-  return (
-    <div className="grid lg:grid-cols-[220px_1fr] gap-6">
-      <Card className="p-2 h-fit lg:sticky lg:top-4">
-        <div className="space-y-1 max-h-[70vh] overflow-y-auto">
-          {subjects.map(s => (
-            <button key={s} onClick={() => setActive(s)}
-              className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${active===s?"bg-primary text-primary-foreground":"hover:bg-muted"}`}>
-              {s}
-            </button>
-          ))}
-        </div>
-      </Card>
-      <Card className="p-5">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h3 className="text-xl font-bold">{active}</h3>
-            {info && <p className="text-xs text-muted-foreground">{info.totalPages} pages • {info.frontMatter} front-matter pages</p>}
+  const subjects = Object.keys(textbookPageInfo);
+  const colors = ["bg-cyan-500","bg-violet-500","bg-amber-500","bg-emerald-500","bg-rose-500","bg-indigo-500","bg-lime-500","bg-sky-500","bg-fuchsia-500","bg-yellow-500","bg-teal-500","bg-red-500"];
+  const slugMap: Record<string,string> = {
+    Amharic:"amharic", English:"english", Mathematics:"mathematics", Physics:"physics",
+    Chemistry:"chemistry", Biology:"biology", Citizenship:"citizenship", ICT:"ict",
+    Geography:"geography", History:"history", Economics:"economics", HPE:"hpe",
+  };
+  const [open, setOpen] = useState<{ subject: string; url: string } | null>(null);
+  const [page, setPage] = useState(1);
+
+  if (open) {
+    return (
+      <div className="fixed inset-0 z-50 bg-background flex flex-col">
+        <div className="h-14 flex items-center px-3 border-b gap-2 shrink-0">
+          <Button variant="ghost" size="icon" onClick={() => setOpen(null)}><ArrowLeft className="h-5 w-5"/></Button>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold truncate">{open.subject}</p>
+            <p className="text-[10px] text-muted-foreground">Grade 9 • page {page}</p>
           </div>
-          <BookOpen className="h-5 w-5 text-primary" />
+          <a href={open.url} download className="p-2 rounded-lg hover:bg-muted"><Download className="h-4 w-4"/></a>
+          <Button variant="ghost" size="icon" onClick={() => setOpen(null)}><X className="h-4 w-4"/></Button>
         </div>
-        <div className="grid sm:grid-cols-2 gap-2 max-h-[65vh] overflow-y-auto">
-          {items.map((it, i) => (
-            <div key={i} className="flex items-center justify-between border rounded-md p-3 text-sm">
-              <span className="truncate">{it.title}</span>
-              <Badge variant="outline" className="ml-2 shrink-0">p.{it.page}</Badge>
+        <div className="flex-1 overflow-hidden bg-muted">
+          <iframe key={page} title={open.subject} src={`${open.url}#page=${page}&toolbar=1&view=FitH`} className="w-full h-full border-0"/>
+        </div>
+        <ContentFinder subject={open.subject} onGo={setPage}/>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+      {subjects.map((s, i) => {
+        const slug = slugMap[s] ?? s.toLowerCase();
+        const url = textbookPdfUrl(slug);
+        return (
+          <Card key={s} className="p-5 flex flex-col">
+            <div className={`w-14 h-14 rounded-2xl ${colors[i%colors.length]} flex items-center justify-center mb-4`}>
+              <BookOpen className="w-7 h-7 text-white"/>
             </div>
-          ))}
-          {items.length === 0 && <p className="text-sm text-muted-foreground">No items.</p>}
-        </div>
-      </Card>
+            <h3 className="text-lg font-bold">{s}</h3>
+            <p className="text-xs text-muted-foreground mb-4">Grade 9 Textbook</p>
+            <div className="flex gap-2 mt-auto">
+              <Button className="flex-1" onClick={() => { setPage(1); setOpen({ subject: s, url }); }}>
+                <BookOpen className="w-4 h-4 mr-1.5"/>Open
+              </Button>
+              <a href={url} download className="inline-flex items-center justify-center px-3 rounded-md border hover:bg-muted">
+                <Download className="w-4 h-4"/>
+              </a>
+            </div>
+          </Card>
+        );
+      })}
     </div>
+  );
+}
+
+const typeConfig = {
+  exercise: { label: "Exercises", icon: Dumbbell, color: "bg-blue-500" },
+  activity: { label: "Activities", icon: Activity, color: "bg-emerald-500" },
+  review:   { label: "Review", icon: FileQuestion, color: "bg-amber-500" },
+} as const;
+
+function ContentFinder({ subject, onGo }: { subject: string; onGo: (p: number) => void }) {
+  const [openF, setOpenF] = useState(false);
+  const [q, setQ] = useState("");
+  const [filter, setFilter] = useState<"all"|"exercise"|"activity"|"review">("all");
+  const frontMatter = textbookPageInfo[subject]?.frontMatter || 0;
+  const items = useMemo(() => (textbookContentIndex[subject] || []).filter(it => it.page > frontMatter), [subject, frontMatter]);
+  const filtered = items.filter(it => (filter==="all" || it.type===filter) && (!q || it.title.toLowerCase().includes(q.toLowerCase())));
+  const counts = { all: items.length, exercise: items.filter(i=>i.type==="exercise").length, activity: items.filter(i=>i.type==="activity").length, review: items.filter(i=>i.type==="review").length };
+
+  return (
+    <>
+      <button onClick={()=>setOpenF(!openF)} className="fixed bottom-6 right-6 z-[60] w-12 h-12 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-lg">
+        <Search className="w-5 h-5"/>
+      </button>
+      {openF && (
+        <>
+          <div className="fixed inset-0 z-[55] bg-black/40" onClick={()=>setOpenF(false)}/>
+          <div className="fixed bottom-0 left-0 right-0 z-[60] bg-card rounded-t-2xl border-t max-h-[75vh] flex flex-col">
+            <div className="flex justify-center pt-2 pb-1"><div className="w-10 h-1 rounded-full bg-muted-foreground/30"/></div>
+            <div className="flex items-center justify-between px-4 pb-2">
+              <h3 className="font-semibold text-sm flex items-center gap-2"><BookOpen className="w-4 h-4 text-primary"/>{subject} Content ({items.length})</h3>
+              <Button variant="ghost" size="icon" onClick={()=>setOpenF(false)}><X className="w-4 h-4"/></Button>
+            </div>
+            <div className="px-4 pb-2">
+              <Input placeholder="Search exercises, activities, reviews…" value={q} onChange={e=>setQ(e.target.value)}/>
+            </div>
+            <div className="flex gap-2 px-4 pb-3 overflow-x-auto">
+              {(["all","exercise","activity","review"] as const).map(t => (
+                <button key={t} onClick={()=>setFilter(t)} className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap ${filter===t?"bg-primary text-primary-foreground":"bg-muted text-muted-foreground"}`}>
+                  {t==="all"?`All (${counts.all})`:`${typeConfig[t].label} (${counts[t]})`}
+                </button>
+              ))}
+            </div>
+            <div className="flex-1 overflow-y-auto px-4 pb-6 space-y-2">
+              {filtered.length===0 ? <p className="text-center text-sm text-muted-foreground py-8">No content found</p> : filtered.map((it, i) => {
+                const cfg = typeConfig[it.type]; const Icon = cfg.icon;
+                return (
+                  <button key={i} onClick={()=>{ onGo(it.page); setOpenF(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl bg-muted/50 hover:bg-muted text-left">
+                    <div className={`w-9 h-9 rounded-lg ${cfg.color} flex items-center justify-center shrink-0`}><Icon className="w-4 h-4 text-white"/></div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{it.title}</p>
+                      <p className="text-xs text-muted-foreground">Book page {it.page - frontMatter}</p>
+                    </div>
+                    <span className="text-xs text-primary font-mono shrink-0">p.{it.page - frontMatter}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </>
+      )}
+    </>
   );
 }
 
@@ -277,7 +361,7 @@ export function MinistrySection() {
           const img = resultImages[id as any];
           return (
             <Card key={`${name}-${id}`} className="overflow-hidden">
-              {img && <div className="aspect-[3/4] bg-muted"><img src={img} alt={name} className="w-full h-full object-cover" loading="lazy" /></div>}
+              {img && <div className="aspect-[3/4] bg-muted"><img src={ministryImageUrl(img)} alt={name} className="w-full h-full object-cover" loading="lazy" /></div>}
               <div className="p-3">
                 <p className="font-semibold text-sm truncate">{name}</p>
                 <p className="text-xs text-muted-foreground">Reg. No: {id}</p>
