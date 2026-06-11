@@ -250,26 +250,40 @@ function ResultsList({ rows, emptyLabel }: { rows: Array<{ student_name?: string
 }
 
 export function MidExamSection() {
-  return <ExamResults table="mid_results" emptyLabel="Mid Exam Results" />;
+  return <ExamResultsLookup table="mid_results" title="Mid Exam" />;
 }
 
 export function FinalExamSection() {
-  return <ExamResults table="final_results" emptyLabel="Final Exam Results" />;
+  return <ExamResultsLookup table="final_results" title="Final Exam" />;
 }
 
 type ExamRow = {
   id: string; student_id: string; subject: string | null;
   grade_group: string | null; result_image_url: string;
   answer_image_url: string | null; student_name: string | null;
+  student_password: string | null;
 };
 
-function ExamResults({ table, emptyLabel }: { table: "mid_results" | "final_results"; emptyLabel: string }) {
+function ExamResultsLookup({ table, title }: { table: "mid_results" | "final_results"; title: string }) {
   const [rows, setRows] = useState<ExamRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [studentId, setStudentId] = useState("");
+  const [verifiedStudent, setVerifiedStudent] = useState<{ id: number; name: string; english_name: string | null; image_url: string | null } | null>(null);
+  const [error, setError] = useState("");
+  const [subjectFilter, setSubjectFilter] = useState<string>("all");
+  const [gradeFilter, setGradeFilter] = useState<string>("all");
+  const [current, setCurrent] = useState<ExamRow | null>(null);
+  const [pending, setPending] = useState<ExamRow | null>(null);
+  const [pwd, setPwd] = useState("");
+  const [pwdError, setPwdError] = useState("");
+  const [showAnswer, setShowAnswer] = useState(false);
+  const [unlocked, setUnlocked] = useState<Set<string>>(new Set());
+  const keyOf = (r: ExamRow) => `${r.student_id}|${r.subject ?? ""}`;
+
   useEffect(() => {
     let active = true;
     const load = async () => {
-      const { data } = await supabase.from(table).select("*").order("created_at", { ascending: false });
+      const { data } = await supabase.from(table).select("*").order("student_id", { ascending: true });
       if (active) { setRows((data as ExamRow[]) ?? []); setLoading(false); }
     };
     load();
@@ -278,19 +292,177 @@ function ExamResults({ table, emptyLabel }: { table: "mid_results" | "final_resu
       .subscribe();
     return () => { active = false; supabase.removeChannel(ch); };
   }, [table]);
+
+  const subjects = Array.from(new Set(rows.map(r => r.subject).filter(Boolean))) as string[];
+  const grades = Array.from(new Set(rows.map(r => r.grade_group).filter(Boolean))) as string[];
+  const filtered = rows.filter(r =>
+    (subjectFilter === "all" || r.subject === subjectFilter) &&
+    (gradeFilter === "all" || r.grade_group === gradeFilter)
+  );
+
+  async function handleVerify() {
+    setError(""); setVerifiedStudent(null); setCurrent(null);
+    const id = parseInt(studentId.trim(), 10);
+    if (!id || isNaN(id)) { setError("Enter a valid student number."); return; }
+    const { data } = await supabase.from("students").select("id, name, english_name, image_url").eq("id", id).maybeSingle();
+    if (!data) { setError("Student not found in directory."); return; }
+    setVerifiedStudent(data as any);
+    const match = filtered.find(r => r.student_id === String(id));
+    if (!match) { setError("No results uploaded for this student yet."); return; }
+    openResult(match);
+  }
+
+  function openResult(r: ExamRow) {
+    setShowAnswer(false);
+    if (r.student_password && !unlocked.has(keyOf(r))) {
+      setPending(r); setPwd(""); setPwdError(""); setCurrent(null);
+    } else {
+      setCurrent(r); setPending(null);
+    }
+  }
+
+  function submitPwd() {
+    if (!pending) return;
+    if (pwd === pending.student_password) {
+      const k = keyOf(pending);
+      setUnlocked(prev => new Set(prev).add(k));
+      setCurrent(pending); setPending(null); setPwd(""); setPwdError("");
+    } else {
+      setPwdError("Incorrect password.");
+    }
+  }
+
+  function navigate(dir: "prev" | "next") {
+    if (!current) return;
+    const sameStudent = filtered.filter(r => r.student_id === current.student_id);
+    if (sameStudent.length <= 1) return;
+    const i = sameStudent.findIndex(r => keyOf(r) === keyOf(current));
+    const j = dir === "prev" ? (i - 1 + sameStudent.length) % sameStudent.length : (i + 1) % sameStudent.length;
+    openResult(sameStudent[j]);
+  }
+
   if (loading) return <Card className="p-10 text-center text-sm text-muted-foreground">Loading…</Card>;
-  return <ResultsList rows={rows} emptyLabel={emptyLabel} />;
+
+  return (
+    <div className="space-y-5">
+      <Card className="p-5">
+        <h3 className="font-bold text-lg mb-1">{title} Results</h3>
+        <p className="text-xs text-muted-foreground mb-4">Enter the student number to view their result, then unlock with the student password.</p>
+        {(subjects.length > 0 || grades.length > 0) && (
+          <div className="flex flex-wrap gap-3 mb-4">
+            {subjects.length > 0 && (
+              <div className="flex gap-1 flex-wrap items-center">
+                <span className="text-xs text-muted-foreground mr-1">Subject:</span>
+                <Button size="sm" variant={subjectFilter==="all"?"default":"outline"} onClick={()=>setSubjectFilter("all")}>All</Button>
+                {subjects.map(s => <Button key={s} size="sm" variant={subjectFilter===s?"default":"outline"} onClick={()=>setSubjectFilter(s)}>{s}</Button>)}
+              </div>
+            )}
+            {grades.length > 0 && (
+              <div className="flex gap-1 flex-wrap items-center">
+                <span className="text-xs text-muted-foreground mr-1">Grade:</span>
+                <Button size="sm" variant={gradeFilter==="all"?"default":"outline"} onClick={()=>setGradeFilter("all")}>All</Button>
+                {grades.map(g => <Button key={g} size="sm" variant={gradeFilter===g?"default":"outline"} onClick={()=>setGradeFilter(g)}>{g}</Button>)}
+              </div>
+            )}
+          </div>
+        )}
+        <div className="flex gap-2">
+          <Input placeholder="Student number (e.g. 49)" value={studentId} onChange={e=>setStudentId(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleVerify()} />
+          <Button onClick={handleVerify}><Search className="h-4 w-4 mr-1"/>Find</Button>
+        </div>
+        {error && <p className="text-xs text-destructive mt-2">{error}</p>}
+        {verifiedStudent && !error && (
+          <div className="mt-3 flex items-center gap-3 p-2 rounded-lg bg-muted/40">
+            {verifiedStudent.image_url && <img src={verifiedStudent.image_url} alt="" className="h-10 w-10 rounded object-cover" />}
+            <div className="min-w-0">
+              <p className="text-sm font-semibold truncate">{verifiedStudent.name}</p>
+              <p className="text-xs text-muted-foreground truncate">{verifiedStudent.english_name} • #{verifiedStudent.id}</p>
+            </div>
+          </div>
+        )}
+      </Card>
+
+      {pending && (
+        <Card className="p-5">
+          <div className="flex items-center gap-2 mb-2"><Lock className="h-4 w-4 text-primary"/><h3 className="font-semibold text-sm">Enter result password</h3></div>
+          <p className="text-xs text-muted-foreground mb-3">This result is locked. Ask the student for their password.</p>
+          <div className="flex gap-2">
+            <Input type="password" placeholder="Password" value={pwd} onChange={e=>setPwd(e.target.value)} onKeyDown={e=>e.key==="Enter"&&submitPwd()} />
+            <Button onClick={submitPwd}>Unlock</Button>
+            <Button variant="ghost" onClick={()=>{setPending(null); setPwd(""); setPwdError("");}}>Cancel</Button>
+          </div>
+          {pwdError && <p className="text-xs text-destructive mt-2">{pwdError}</p>}
+        </Card>
+      )}
+
+      {current && (
+        <Card className="overflow-hidden">
+          <div className="p-4 flex flex-wrap items-center gap-2 border-b">
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold truncate">{current.student_name} <span className="text-xs text-muted-foreground">#{current.student_id}</span></p>
+              <div className="flex gap-1 mt-1 flex-wrap">
+                {current.subject && <Badge variant="secondary" className="text-xs">{current.subject}</Badge>}
+                {current.grade_group && <Badge variant="outline" className="text-xs">{current.grade_group}</Badge>}
+              </div>
+            </div>
+            {filtered.filter(r => r.student_id === current.student_id).length > 1 && (
+              <>
+                <Button size="sm" variant="outline" onClick={()=>navigate("prev")}><ChevronLeft className="h-4 w-4"/></Button>
+                <Button size="sm" variant="outline" onClick={()=>navigate("next")}><ChevronRight className="h-4 w-4"/></Button>
+              </>
+            )}
+            <Button size="sm" variant="outline" onClick={()=>{setCurrent(null); setShowAnswer(false);}}><X className="h-4 w-4"/></Button>
+          </div>
+          <img src={current.result_image_url} alt="Result" className="w-full" />
+          {current.answer_image_url && (
+            <div className="p-4 border-t space-y-3">
+              <Button className="w-full" variant={showAnswer?"outline":"default"} onClick={()=>setShowAnswer(!showAnswer)}>
+                <FileText className="h-4 w-4 mr-2"/>{showAnswer?"Hide":"Reveal"} Answer Key
+              </Button>
+              {showAnswer && <img src={current.answer_image_url} alt="Answer key" className="w-full rounded-md" />}
+              <a href={current.answer_image_url} download className="text-xs text-primary hover:underline flex items-center gap-1"><Download className="h-3 w-3"/>Download answer key</a>
+            </div>
+          )}
+        </Card>
+      )}
+    </div>
+  );
 }
 
+const RC_SUBJECTS = ["Amharic","English","Mathematics","General Science","Social Studies","Citizenship Education","Performing & Visual Arts","Information Technology","Health & Physical Education","Career & Technical Education"];
+const RC_CONDUCT = ["Cooperates Willingly","Refrains from disturbing others","Respects Authorities & Elders","Handles School & Personal Property Carefully","Listens Attentively","Attendance & Punctuality"];
+const RC_QUARTERS = ["1st","2nd","3rd","4th"] as const;
+
+type RC = {
+  id: string; student_id: string; student_name: string | null; sex: string | null;
+  age: number | null; kebele: string | null; house_no: string | null; teacher_name: string | null;
+  school_year: string | null; grade: string | null;
+  subjects: Record<string, Record<string, number | null>> | null;
+  conduct: Record<string, Record<string, string | null>> | null;
+  days_present: Record<string, number | null> | null;
+  days_absent: Record<string, number | null> | null;
+  times_tardy: Record<string, number | null> | null;
+  total_academic_days: Record<string, number | null> | null;
+  rank: Record<string, number | null> | null;
+  remarks: string | null; promoted_to: string | null; detained_in_grade: string | null;
+  card_password: string | null; total_students: number | null;
+};
+
 export function ReportCardSection() {
-  const [q, setQ] = useState("");
-  const [allCards, setAllCards] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [studentId, setStudentId] = useState("");
+  const [allCards, setAllCards] = useState<RC[]>([]);
+  const [card, setCard] = useState<RC | null>(null);
+  const [pending, setPending] = useState<RC | null>(null);
+  const [pwd, setPwd] = useState("");
+  const [pwdError, setPwdError] = useState("");
+  const [error, setError] = useState("");
+  const [unlocked, setUnlocked] = useState<Set<string>>(new Set());
+
   useEffect(() => {
     let active = true;
     const load = async () => {
-      const { data } = await supabase.from("report_cards").select("*").order("created_at", { ascending: false });
-      if (active) { setAllCards(data ?? []); setLoading(false); }
+      const { data } = await supabase.from("report_cards").select("*").order("student_id", { ascending: true });
+      if (active) setAllCards((data as RC[]) ?? []);
     };
     load();
     const ch = supabase.channel("report_cards-feed")
@@ -298,50 +470,185 @@ export function ReportCardSection() {
       .subscribe();
     return () => { active = false; supabase.removeChannel(ch); };
   }, []);
-  const cards = allCards.filter(c => c.student_name?.toLowerCase().includes(q.toLowerCase()));
-  if (loading) return <Card className="p-10 text-center text-sm text-muted-foreground">Loading…</Card>;
+
+  function openCard(c: RC) {
+    if (c.card_password && !unlocked.has(c.id)) {
+      setPending(c); setCard(null); setPwd(""); setPwdError("");
+    } else {
+      setCard(c); setPending(null);
+    }
+  }
+
+  function handleSearch() {
+    setError(""); setCard(null); setPending(null);
+    const sid = studentId.trim();
+    if (!sid) { setError("Enter a student number."); return; }
+    const dir = students.find(s => String(s.id) === sid);
+    const match = allCards.find(c => c.student_id === sid)
+      ?? (dir && allCards.find(c => (c.student_name ?? "").toLowerCase().includes((dir.englishName || dir.name).toLowerCase())));
+    if (!match) { setError("No report card found for this student."); return; }
+    openCard(match);
+  }
+
+  function submitPwd() {
+    if (!pending) return;
+    if (pwd === pending.card_password) {
+      setUnlocked(prev => new Set(prev).add(pending.id));
+      setCard(pending); setPending(null); setPwd(""); setPwdError("");
+    } else {
+      setPwdError("Incorrect password.");
+    }
+  }
+
+  function navigate(dir: "prev" | "next") {
+    if (!card || allCards.length <= 1) return;
+    const i = allCards.findIndex(c => c.id === card.id);
+    const j = dir === "prev" ? (i - 1 + allCards.length) % allCards.length : (i + 1) % allCards.length;
+    openCard(allCards[j]);
+  }
+
   return (
-    <div className="space-y-4">
-      <div className="relative max-w-md">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input placeholder="Search by student…" value={q} onChange={e=>setQ(e.target.value)} className="pl-9" />
-      </div>
-      <div className="grid lg:grid-cols-2 gap-4">
-        {cards.map((c: any) => (
-          <Card key={c.id} className="p-5">
-            <div className="flex items-start justify-between mb-3">
-              <div>
-                <p className="font-bold">{c.student_name}</p>
-                <p className="text-xs text-muted-foreground">{c.sex} • Age {c.age} • Grade {c.grade || "—"}</p>
-              </div>
-              <Badge>{c.school_year}</Badge>
-            </div>
-            {c.subjects && typeof c.subjects === "object" && (
-              <div className="rounded-md border overflow-hidden text-xs">
-                <table className="w-full">
-                  <thead className="bg-muted">
-                    <tr><th className="text-left p-2">Subject</th><th className="p-2">1st</th><th className="p-2">2nd</th><th className="p-2">3rd</th><th className="p-2">4th</th></tr>
-                  </thead>
-                  <tbody>
-                    {Object.entries(c.subjects).map(([sub, v]: any) => (
-                      <tr key={sub} className="border-t">
-                        <td className="p-2">{sub}</td>
-                        <td className="p-2 text-center">{v["1st"] || "-"}</td>
-                        <td className="p-2 text-center">{v["2nd"] || "-"}</td>
-                        <td className="p-2 text-center">{v["3rd"] || "-"}</td>
-                        <td className="p-2 text-center">{v["4th"] || "-"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            {c.remarks && <p className="text-xs mt-3 text-muted-foreground">Remarks: {c.remarks}</p>}
-          </Card>
-        ))}
-        {cards.length === 0 && <Card className="p-10 text-center col-span-full"><ScrollText className="h-10 w-10 mx-auto text-muted-foreground mb-2" /><p className="text-sm text-muted-foreground">No report cards match.</p></Card>}
-      </div>
+    <div className="space-y-5">
+      <Card className="p-5">
+        <h3 className="font-bold text-lg mb-1">Report Cards</h3>
+        <p className="text-xs text-muted-foreground mb-4">Enter the student number to open their report card.</p>
+        <div className="flex gap-2">
+          <Input placeholder="Student number (e.g. 49)" value={studentId} onChange={e=>setStudentId(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleSearch()} />
+          <Button onClick={handleSearch}><Search className="h-4 w-4 mr-1"/>Find</Button>
+        </div>
+        {error && <p className="text-xs text-destructive mt-2">{error}</p>}
+      </Card>
+
+      {pending && (
+        <Card className="p-5">
+          <div className="flex items-center gap-2 mb-2"><Lock className="h-4 w-4 text-primary"/><h3 className="font-semibold text-sm">Enter card password</h3></div>
+          <p className="text-xs text-muted-foreground mb-3">This report card is locked.</p>
+          <div className="flex gap-2">
+            <Input type="password" placeholder="Password" value={pwd} onChange={e=>setPwd(e.target.value)} onKeyDown={e=>e.key==="Enter"&&submitPwd()} />
+            <Button onClick={submitPwd}>Unlock</Button>
+            <Button variant="ghost" onClick={()=>{setPending(null); setPwd("");}}>Cancel</Button>
+          </div>
+          {pwdError && <p className="text-xs text-destructive mt-2">{pwdError}</p>}
+        </Card>
+      )}
+
+      {card && <ReportCardView card={card} onClose={()=>setCard(null)} onPrev={()=>navigate("prev")} onNext={()=>navigate("next")} />}
     </div>
+  );
+}
+
+function ReportCardView({ card, onClose, onPrev, onNext }: { card: RC; onClose: () => void; onPrev: () => void; onNext: () => void }) {
+  const subjectKeys = card.subjects ? Array.from(new Set([...RC_SUBJECTS, ...Object.keys(card.subjects)])) : RC_SUBJECTS;
+  const conductKeys = card.conduct ? Array.from(new Set([...RC_CONDUCT, ...Object.keys(card.conduct)])) : RC_CONDUCT;
+  return (
+    <Card className="overflow-hidden">
+      <div className="p-4 flex flex-wrap items-center gap-2 border-b bg-muted/30">
+        <div className="flex-1 min-w-0">
+          <p className="font-bold truncate">{card.student_name} <span className="text-xs text-muted-foreground">#{card.student_id}</span></p>
+          <p className="text-xs text-muted-foreground">{card.sex ?? "—"} • Age {card.age ?? "—"} • Grade {card.grade || "—"} • {card.school_year ?? ""}</p>
+        </div>
+        <Button size="sm" variant="outline" onClick={onPrev}><ChevronLeft className="h-4 w-4"/></Button>
+        <Button size="sm" variant="outline" onClick={onNext}><ChevronRight className="h-4 w-4"/></Button>
+        <Button size="sm" variant="outline" onClick={()=>window.print()}><Printer className="h-4 w-4"/></Button>
+        <Button size="sm" variant="outline" onClick={onClose}><X className="h-4 w-4"/></Button>
+      </div>
+
+      <div className="p-4 grid sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs border-b">
+        <div><span className="text-muted-foreground">Teacher:</span> {card.teacher_name || "—"}</div>
+        <div><span className="text-muted-foreground">Kebele:</span> {card.kebele || "—"}</div>
+        <div><span className="text-muted-foreground">House No:</span> {card.house_no || "—"}</div>
+        <div><span className="text-muted-foreground">Class size:</span> {card.total_students ?? "—"}</div>
+      </div>
+
+      <div className="p-4 border-b">
+        <h4 className="font-semibold text-sm mb-2">Subjects</h4>
+        <div className="rounded-md border overflow-x-auto text-xs">
+          <table className="w-full">
+            <thead className="bg-muted">
+              <tr><th className="text-left p-2">Subject</th>{RC_QUARTERS.map(q => <th key={q} className="p-2">{q}</th>)}<th className="p-2">Avg</th></tr>
+            </thead>
+            <tbody>
+              {subjectKeys.map(sub => {
+                const row = card.subjects?.[sub] ?? {};
+                const nums = RC_QUARTERS.map(q => Number(row[q] ?? 0));
+                const filled = nums.filter(n => n > 0);
+                const avg = filled.length ? (filled.reduce((a,b)=>a+b,0)/filled.length).toFixed(1) : "—";
+                return (
+                  <tr key={sub} className="border-t">
+                    <td className="p-2">{sub}</td>
+                    {RC_QUARTERS.map(q => <td key={q} className="p-2 text-center">{row[q] ?? "-"}</td>)}
+                    <td className="p-2 text-center font-semibold">{avg}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="p-4 border-b">
+        <h4 className="font-semibold text-sm mb-2">Conduct</h4>
+        <div className="rounded-md border overflow-x-auto text-xs">
+          <table className="w-full">
+            <thead className="bg-muted">
+              <tr><th className="text-left p-2">Behavior</th>{RC_QUARTERS.map(q => <th key={q} className="p-2">{q}</th>)}</tr>
+            </thead>
+            <tbody>
+              {conductKeys.map(k => {
+                const row = card.conduct?.[k] ?? {};
+                return (
+                  <tr key={k} className="border-t">
+                    <td className="p-2">{k}</td>
+                    {RC_QUARTERS.map(q => <td key={q} className="p-2 text-center">{row[q] ?? "-"}</td>)}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="p-4 grid sm:grid-cols-2 gap-4 text-xs border-b">
+        <div>
+          <h4 className="font-semibold text-sm mb-2">Attendance</h4>
+          <table className="w-full border rounded-md overflow-hidden">
+            <thead className="bg-muted"><tr><th className="text-left p-2">Metric</th>{RC_QUARTERS.map(q => <th key={q} className="p-2">{q}</th>)}</tr></thead>
+            <tbody>
+              {[
+                ["Days Present", card.days_present],
+                ["Days Absent", card.days_absent],
+                ["Times Tardy", card.times_tardy],
+                ["Academic Days", card.total_academic_days],
+              ].map(([label, obj]) => (
+                <tr key={label as string} className="border-t">
+                  <td className="p-2">{label as string}</td>
+                  {RC_QUARTERS.map(q => <td key={q} className="p-2 text-center">{(obj as any)?.[q] ?? "-"}</td>)}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div>
+          <h4 className="font-semibold text-sm mb-2">Rank</h4>
+          <table className="w-full border rounded-md overflow-hidden">
+            <thead className="bg-muted"><tr>{RC_QUARTERS.map(q => <th key={q} className="p-2">{q}</th>)}<th className="p-2">Avg</th></tr></thead>
+            <tbody>
+              <tr>{RC_QUARTERS.map(q => <td key={q} className="p-2 text-center">{card.rank?.[q] ?? "-"}</td>)}<td className="p-2 text-center font-semibold">{card.rank?.["Avg"] ?? "-"}</td></tr>
+            </tbody>
+          </table>
+          <div className="mt-3 space-y-1">
+            {card.promoted_to && <p><Badge variant="default" className="mr-2">Promoted</Badge>{card.promoted_to}</p>}
+            {card.detained_in_grade && <p><Badge variant="destructive" className="mr-2">Detained</Badge>{card.detained_in_grade}</p>}
+          </div>
+        </div>
+      </div>
+
+      {card.remarks && (
+        <div className="p-4 text-sm">
+          <span className="font-semibold">Remarks: </span><span className="text-muted-foreground">{card.remarks}</span>
+        </div>
+      )}
+    </Card>
   );
 }
 
