@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { GraduationCap, BookOpen, FileText, Award, ScrollText, Building2, Search, X, ArrowLeft, Download, Dumbbell, Activity, FileQuestion } from "lucide-react";
+import { GraduationCap, BookOpen, FileText, Award, ScrollText, Building2, Search, X, ArrowLeft, Download, Dumbbell, Activity, FileQuestion, Lock, ChevronLeft, ChevronRight, Printer } from "lucide-react";
 
 const GH_RAW = "https://raw.githubusercontent.com/hubeybzeynu/grade9sts/main";
 export const ministryImageUrl = (path: string) => path.startsWith("http") ? path : `${GH_RAW}/public${path}`;
