@@ -378,15 +378,93 @@ export type Database = {
         }
         Relationships: []
       }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      get_final_result_by_password: {
+        Args: { p_password: string; p_student_id: string }
+        Returns: {
+          answer_image_url: string
+          grade_group: string
+          id: string
+          result_image_url: string
+          student_id: string
+          student_name: string
+          subject: string
+        }[]
+      }
+      get_mid_result_by_password: {
+        Args: { p_password: string; p_student_id: string }
+        Returns: {
+          answer_image_url: string
+          grade_group: string
+          id: string
+          result_image_url: string
+          student_id: string
+          student_name: string
+          subject: string
+        }[]
+      }
+      get_report_card_by_password: {
+        Args: { p_password: string; p_student_id: string }
+        Returns: {
+          age: number
+          conduct: Json
+          days_absent: Json
+          days_present: Json
+          detained_in_grade: string
+          grade: string
+          house_no: string
+          id: string
+          kebele: string
+          promoted_to: string
+          rank: Json
+          remarks: string
+          school_year: string
+          sex: string
+          student_id: string
+          student_name: string
+          subjects: Json
+          teacher_name: string
+          times_tardy: Json
+          total_academic_days: Json
+          total_students: number
+        }[]
+      }
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
+      is_staff: { Args: { _user_id: string }; Returns: boolean }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "manager"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -513,6 +591,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "manager"],
+    },
   },
 } as const
