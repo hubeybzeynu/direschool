@@ -1,5 +1,5 @@
 import { students } from "@/data/students";
-import { textbookContentIndex, textbookPageInfo } from "@/data/textbook";
+import { textbookPageInfo } from "@/data/textbook";
 import { resultImages, nameToIdMap } from "@/data/ministry";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -7,7 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { GraduationCap, BookOpen, FileText, Award, ScrollText, Building2, Search, X, ArrowLeft, Download, Dumbbell, Activity, FileQuestion, Lock, ChevronLeft, ChevronRight, Printer } from "lucide-react";
+import { GraduationCap, BookOpen, FileText, Award, Building2, Search, X, Download, Lock, ChevronLeft, ChevronRight, Printer } from "lucide-react";
+import { TextbookViewer } from "./textbook-viewer";
 
 const GH_RAW = "https://raw.githubusercontent.com/hubeybzeynu/grade9sts/main";
 export const ministryImageUrl = (path: string) => path.startsWith("http") ? path : `${GH_RAW}/public${path}`;
@@ -64,26 +65,9 @@ export function TextbooksSection() {
     Geography:"geography", History:"history", Economics:"economics", HPE:"hpe",
   };
   const [open, setOpen] = useState<{ subject: string; url: string } | null>(null);
-  const [page, setPage] = useState(1);
 
   if (open) {
-    return (
-      <div className="fixed inset-0 z-50 bg-background flex flex-col">
-        <div className="h-14 flex items-center px-3 border-b gap-2 shrink-0">
-          <Button variant="ghost" size="icon" onClick={() => setOpen(null)}><ArrowLeft className="h-5 w-5"/></Button>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold truncate">{open.subject}</p>
-            <p className="text-[10px] text-muted-foreground">Grade 9 • page {page}</p>
-          </div>
-          <a href={open.url} download className="p-2 rounded-lg hover:bg-muted"><Download className="h-4 w-4"/></a>
-          <Button variant="ghost" size="icon" onClick={() => setOpen(null)}><X className="h-4 w-4"/></Button>
-        </div>
-        <div className="flex-1 overflow-hidden bg-muted">
-          <iframe key={page} title={open.subject} src={`${open.url}#page=${page}&toolbar=1&view=FitH`} className="w-full h-full border-0"/>
-        </div>
-        <ContentFinder subject={open.subject} onGo={setPage}/>
-      </div>
-    );
+    return <TextbookViewer subject={open.subject} url={open.url} onClose={() => setOpen(null)}/>;
   }
 
   return (
@@ -99,7 +83,7 @@ export function TextbooksSection() {
             <h3 className="text-lg font-bold">{s}</h3>
             <p className="text-xs text-muted-foreground mb-4">Grade 9 Textbook</p>
             <div className="flex gap-2 mt-auto">
-              <Button className="flex-1" onClick={() => { setPage(1); setOpen({ subject: s, url }); }}>
+              <Button className="flex-1" onClick={() => setOpen({ subject: s, url })}>
                 <BookOpen className="w-4 h-4 mr-1.5"/>Open
               </Button>
               <a href={url} download className="inline-flex items-center justify-center px-3 rounded-md border hover:bg-muted">
@@ -110,67 +94,6 @@ export function TextbooksSection() {
         );
       })}
     </div>
-  );
-}
-
-const typeConfig = {
-  exercise: { label: "Exercises", icon: Dumbbell, color: "bg-blue-500" },
-  activity: { label: "Activities", icon: Activity, color: "bg-emerald-500" },
-  review:   { label: "Review", icon: FileQuestion, color: "bg-amber-500" },
-} as const;
-
-function ContentFinder({ subject, onGo }: { subject: string; onGo: (p: number) => void }) {
-  const [openF, setOpenF] = useState(false);
-  const [q, setQ] = useState("");
-  const [filter, setFilter] = useState<"all"|"exercise"|"activity"|"review">("all");
-  const frontMatter = textbookPageInfo[subject]?.frontMatter || 0;
-  const items = useMemo(() => (textbookContentIndex[subject] || []).filter(it => it.page > frontMatter), [subject, frontMatter]);
-  const filtered = items.filter(it => (filter==="all" || it.type===filter) && (!q || it.title.toLowerCase().includes(q.toLowerCase())));
-  const counts = { all: items.length, exercise: items.filter(i=>i.type==="exercise").length, activity: items.filter(i=>i.type==="activity").length, review: items.filter(i=>i.type==="review").length };
-
-  return (
-    <>
-      <button onClick={()=>setOpenF(!openF)} className="fixed bottom-6 right-6 z-[60] w-12 h-12 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-lg">
-        <Search className="w-5 h-5"/>
-      </button>
-      {openF && (
-        <>
-          <div className="fixed inset-0 z-[55] bg-black/40" onClick={()=>setOpenF(false)}/>
-          <div className="fixed bottom-0 left-0 right-0 z-[60] bg-card rounded-t-2xl border-t max-h-[75vh] flex flex-col">
-            <div className="flex justify-center pt-2 pb-1"><div className="w-10 h-1 rounded-full bg-muted-foreground/30"/></div>
-            <div className="flex items-center justify-between px-4 pb-2">
-              <h3 className="font-semibold text-sm flex items-center gap-2"><BookOpen className="w-4 h-4 text-primary"/>{subject} Content ({items.length})</h3>
-              <Button variant="ghost" size="icon" onClick={()=>setOpenF(false)}><X className="w-4 h-4"/></Button>
-            </div>
-            <div className="px-4 pb-2">
-              <Input placeholder="Search exercises, activities, reviews…" value={q} onChange={e=>setQ(e.target.value)}/>
-            </div>
-            <div className="flex gap-2 px-4 pb-3 overflow-x-auto">
-              {(["all","exercise","activity","review"] as const).map(t => (
-                <button key={t} onClick={()=>setFilter(t)} className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap ${filter===t?"bg-primary text-primary-foreground":"bg-muted text-muted-foreground"}`}>
-                  {t==="all"?`All (${counts.all})`:`${typeConfig[t].label} (${counts[t]})`}
-                </button>
-              ))}
-            </div>
-            <div className="flex-1 overflow-y-auto px-4 pb-6 space-y-2">
-              {filtered.length===0 ? <p className="text-center text-sm text-muted-foreground py-8">No content found</p> : filtered.map((it, i) => {
-                const cfg = typeConfig[it.type]; const Icon = cfg.icon;
-                return (
-                  <button key={i} onClick={()=>{ onGo(it.page); setOpenF(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl bg-muted/50 hover:bg-muted text-left">
-                    <div className={`w-9 h-9 rounded-lg ${cfg.color} flex items-center justify-center shrink-0`}><Icon className="w-4 h-4 text-white"/></div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{it.title}</p>
-                      <p className="text-xs text-muted-foreground">Book page {it.page - frontMatter}</p>
-                    </div>
-                    <span className="text-xs text-primary font-mono shrink-0">p.{it.page - frontMatter}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </>
-      )}
-    </>
   );
 }
 
