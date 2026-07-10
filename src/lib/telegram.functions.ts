@@ -60,12 +60,19 @@ export const recordLogin = createServerFn({ method: "POST" })
     const { supabase, userId, claims } = context;
     const email = (claims as any).email ?? null;
     const name = (claims as any).user_metadata?.full_name ?? (claims as any).name ?? null;
+
+    // Only notify the admin on the FIRST login per user — subsequent sign-ins are silent.
+    const { count: priorCount } = await supabase
+      .from("login_events")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId);
+
     await supabase.from("login_events").insert({ user_id: userId, user_email: email, user_name: name });
-    // Notify admin via Telegram
-    const token = process.env.TELEGRAM_BOT_TOKEN;
-    if (token) {
+
+    if ((priorCount ?? 0) === 0 && process.env.TELEGRAM_BOT_TOKEN) {
+      const token = process.env.TELEGRAM_BOT_TOKEN;
       const adminChat = 6218343992;
-      const text = `🔐 New portal login\nEmail: <b>${email ?? "(none)"}</b>\nName: ${name ?? "-"}\nTime: ${new Date().toISOString()}`;
+      const text = `🔐 New portal user signed in for the first time\nEmail: <b>${email ?? "(none)"}</b>\nName: ${name ?? "-"}\nTime: ${new Date().toISOString()}`;
       await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
