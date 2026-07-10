@@ -48,8 +48,9 @@ export const Route = createFileRoute("/_authenticated/school/$schoolId")({
   component: SchoolPage,
 });
 
+import type { ReactElement } from "react";
 const GRADES = [7, 8, 9, 10, 11, 12] as const;
-type TabDef = { key: string; title: string; icon: typeof Home; render: () => JSX.Element };
+type TabDef = { key: string; title: string; icon: typeof Home; render: () => ReactElement };
 const BASE_TABS: TabDef[] = [
   { key: "home", title: "Home", icon: Home, render: () => <HomeSection /> },
   { key: "students", title: "Students", icon: Users, render: () => <StudentsSection /> },
