@@ -199,19 +199,21 @@ export function StudentsSection() {
         </div>
         <Badge variant="secondary">{filtered.length} students</Badge>
       </div>
-      <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
         {filtered.map(s => (
-          <Card key={s.id} className="overflow-hidden">
-            <div className="aspect-square bg-muted">
+          <Card key={s.id} className="overflow-hidden group hover:border-primary transition-colors">
+            <div className="aspect-[3/4] bg-muted">
               <img src={s.imageUrl} alt={s.englishName} className="w-full h-full object-cover" loading="lazy" />
             </div>
-            <div className="p-3">
-              <p className="font-semibold text-sm truncate">{s.name}</p>
-              <p className="text-xs text-muted-foreground truncate">{s.englishName}</p>
-              <div className="flex gap-1 mt-2 flex-wrap">
-                <Badge variant="outline" className="text-xs">{s.section}</Badge>
-                <Badge variant="outline" className="text-xs">{s.gender}</Badge>
-                <Badge variant="outline" className="text-xs">Age {s.age}</Badge>
+            <div className="p-2">
+              <p className="font-semibold text-xs truncate leading-tight">{s.englishName}</p>
+              <p className="text-[10px] text-muted-foreground truncate">{s.name}</p>
+              <div className="flex items-center gap-1 mt-1.5 text-[10px] text-muted-foreground">
+                <span className="px-1.5 py-0.5 rounded bg-muted font-medium">{s.section}</span>
+                <span>•</span>
+                <span>{s.gender[0]}</span>
+                <span>•</span>
+                <span>{s.age}y</span>
               </div>
             </div>
           </Card>
