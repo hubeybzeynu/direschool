@@ -10,13 +10,11 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import {
-  ArrowLeft, GraduationCap, LogOut, Users, ClipboardList, Trophy,
-  BookOpen, Award, Home, ScrollText,
+  ArrowLeft, GraduationCap, LogOut, Users, Award, Home, ScrollText,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
-  HomeSection, TextbooksSection, StudentsSection, MidExamSection,
-  FinalExamSection, ReportCardSection, MinistrySection,
+  HomeSection, StudentsSection, ReportCardSection, MinistrySection,
 } from "@/components/st-theresa/sections";
 
 export const Route = createFileRoute("/_authenticated/school/$schoolId")({
@@ -50,21 +48,24 @@ export const Route = createFileRoute("/_authenticated/school/$schoolId")({
   component: SchoolPage,
 });
 
-const TABS = [
+const GRADES = [7, 8, 9, 10, 11, 12] as const;
+type TabDef = { key: string; title: string; icon: typeof Home; render: () => JSX.Element };
+const BASE_TABS: TabDef[] = [
   { key: "home", title: "Home", icon: Home, render: () => <HomeSection /> },
-  { key: "textbooks", title: "Textbooks", icon: BookOpen, render: () => <TextbooksSection /> },
   { key: "students", title: "Students", icon: Users, render: () => <StudentsSection /> },
-  { key: "mid", title: "Mid Exam", icon: ClipboardList, render: () => <MidExamSection /> },
-  { key: "final", title: "Final Exam", icon: Trophy, render: () => <FinalExamSection /> },
   { key: "report", title: "Report Card", icon: ScrollText, render: () => <ReportCardSection /> },
-  { key: "ministry", title: "Ministry", icon: Award, render: () => <MinistrySection /> },
-] as const;
+];
+const MINISTRY_TAB: TabDef = { key: "ministry", title: "Ministry", icon: Award, render: () => <MinistrySection /> };
 
 function SchoolPage() {
   const { school } = Route.useLoaderData();
   const navigate = useNavigate();
   const stt = isStTheresa(school.id);
+  const [grade, setGrade] = useState<number>(9);
   const [tab, setTab] = useState<string>("home");
+  // Ministry only for Grade 8
+  const tabs = grade === 8 ? [MINISTRY_TAB] : BASE_TABS;
+  const hasData = stt && grade === 9;
 
   // Telegram-link gate
   const check = useServerFn(checkTelegramLink);
@@ -79,43 +80,41 @@ function SchoolPage() {
     else navigate({ to: "/auth" });
   }
 
-  if (!stt) {
+  if (!hasData) {
     return (
       <div className="min-h-screen bg-background">
-        <Header onLogout={handleLogout} />
+        <Header onLogout={handleLogout}>
+          <SchoolBadge school={school} grade={grade} />
+        </Header>
+        <GradeBar grade={grade} onChange={setGrade} />
         <main className="mx-auto max-w-4xl px-4 py-16 text-center">
           <div className="inline-flex h-14 w-14 items-center justify-center rounded-xl bg-primary text-primary-foreground mb-4">
             <GraduationCap className="h-7 w-7" />
           </div>
           <h1 className="text-2xl sm:text-3xl font-bold">{school.name}</h1>
-          <p className="text-sm text-muted-foreground mt-2">Dire Dawa</p>
+          <p className="text-sm text-muted-foreground mt-2">Dire Dawa • Grade {grade}</p>
           <Card className="p-10 mt-8">
             <p className="font-medium">No data yet</p>
-            <p className="text-sm text-muted-foreground mt-1">Data for this school will be added later.</p>
+            <p className="text-sm text-muted-foreground mt-1">
+              {stt ? `Grade ${grade} data will be added later.` : "Data for this school will be added later."}
+            </p>
           </Card>
         </main>
       </div>
     );
   }
 
-  const active = TABS.find(t => t.key === tab) ?? TABS[0];
+  const active = tabs.find(t => t.key === tab) ?? tabs[0];
   return (
     <div className="min-h-screen" style={{ background: "var(--gradient-bg)" }}>
       <Header onLogout={handleLogout}>
-        <div className="flex items-center gap-2 min-w-0">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <GraduationCap className="h-5 w-5" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm font-semibold leading-tight truncate">{school.name}</p>
-            <p className="text-xs text-muted-foreground">Dire Dawa • Grade 9</p>
-          </div>
-        </div>
+        <SchoolBadge school={school} grade={grade} />
       </Header>
+      <GradeBar grade={grade} onChange={(g) => { setGrade(g); setTab(g === 8 ? "ministry" : "home"); }} />
 
       <nav className="border-b bg-background/60 backdrop-blur sticky top-0 z-10">
         <div className="mx-auto max-w-7xl px-4 flex gap-1 overflow-x-auto">
-          {TABS.map(t => (
+          {tabs.map(t => (
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
@@ -136,6 +135,41 @@ function SchoolPage() {
       </main>
     </div>
   );
+
+  function GradeBar({ grade, onChange }: { grade: number; onChange: (g: number) => void }) {
+    return (
+      <div className="border-b bg-background/80">
+        <div className="mx-auto max-w-7xl px-4 py-2 flex items-center gap-2 overflow-x-auto">
+          <span className="text-xs text-muted-foreground shrink-0 mr-1">Grade:</span>
+          {GRADES.map(g => (
+            <button
+              key={g}
+              onClick={() => onChange(g)}
+              className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-colors ${
+                grade === g ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/70"
+              }`}
+            >
+              Grade {g}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  function SchoolBadge({ school, grade }: { school: { name: string }; grade: number }) {
+    return (
+      <div className="flex items-center gap-2 min-w-0">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+          <GraduationCap className="h-5 w-5" />
+        </div>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold leading-tight truncate">{school.name}</p>
+          <p className="text-xs text-muted-foreground">Dire Dawa • Grade {grade}</p>
+        </div>
+      </div>
+    );
+  }
 }
 
 function Header({ onLogout, children }: { onLogout: () => void; children?: React.ReactNode }) {
