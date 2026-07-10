@@ -44,6 +44,13 @@ export function HomeSection() {
           </Card>
         ))}
       </div>
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-xl font-bold flex items-center gap-2"><BookOpen className="h-5 w-5 text-primary"/>Textbooks</h3>
+          <p className="text-xs text-muted-foreground">Grade 9 • {subjects} subjects</p>
+        </div>
+        <TextbooksSection />
+      </div>
     </div>
   );
 }
