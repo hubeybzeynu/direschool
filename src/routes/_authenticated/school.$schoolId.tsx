@@ -1,9 +1,8 @@
-import { createFileRoute, Link, notFound, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
-import { getSchoolById } from "@/lib/schools";
-import { isStTheresa } from "@/lib/st-theresa";
+import { useEffect, useMemo, useState } from "react";
+import { fetchSchoolBySlug, fetchSections } from "@/lib/manager-client";
 import { supabase } from "@/integrations/supabase/client";
 import { checkTelegramLink } from "@/lib/telegram.functions";
 import { Card } from "@/components/ui/card";
@@ -18,15 +17,10 @@ import {
 } from "@/components/st-theresa/sections";
 
 export const Route = createFileRoute("/_authenticated/school/$schoolId")({
-  loader: ({ params }) => {
-    const school = getSchoolById(params.schoolId);
-    if (!school) throw notFound();
-    return { school };
-  },
-  head: ({ loaderData }) => ({
+  head: ({ params }) => ({
     meta: [
-      { title: `${loaderData?.school.name ?? "School"} — Dashboard` },
-      { name: "description", content: `Manage ${loaderData?.school.name ?? "this school"} in Dire Dawa.` },
+      { title: `${params.schoolId} — Dire Dawa Schools` },
+      { name: "description", content: "School dashboard — students, grades, and report cards." },
     ],
   }),
   notFoundComponent: () => (
@@ -49,24 +43,55 @@ export const Route = createFileRoute("/_authenticated/school/$schoolId")({
 });
 
 import type { ReactElement } from "react";
-const GRADES = [7, 8, 9, 10, 11, 12] as const;
 type TabDef = { key: string; title: string; icon: typeof Home; render: () => ReactElement };
-const BASE_TABS: TabDef[] = [
-  { key: "home", title: "Home", icon: Home, render: () => <HomeSection /> },
-  { key: "students", title: "Students", icon: Users, render: () => <StudentsSection /> },
-  { key: "report", title: "Report Card", icon: ScrollText, render: () => <ReportCardSection /> },
-];
-const MINISTRY_TAB: TabDef = { key: "ministry", title: "Ministry", icon: Award, render: () => <MinistrySection /> };
 
 function SchoolPage() {
-  const { school } = Route.useLoaderData();
+  const { schoolId } = Route.useParams();
   const navigate = useNavigate();
-  const stt = isStTheresa(school.id);
-  const [grade, setGrade] = useState<number>(9);
+  const [grade, setGrade] = useState<string | null>(null);
+  const [section, setSection] = useState<string | null>(null);
   const [tab, setTab] = useState<string>("home");
-  // Ministry only for Grade 8
-  const tabs = grade === 8 ? [MINISTRY_TAB] : BASE_TABS;
-  const hasData = stt && grade === 9;
+
+  const schoolQ = useQuery({
+    queryKey: ["manager-school", schoolId],
+    queryFn: () => fetchSchoolBySlug(schoolId),
+  });
+  const school = schoolQ.data;
+
+  const sectionsQ = useQuery({
+    queryKey: ["manager-sections", school?.id],
+    queryFn: () => fetchSections(school!.id),
+    enabled: !!school?.id,
+  });
+  const allSections = sectionsQ.data ?? [];
+
+  const grades = useMemo(
+    () => Array.from(new Set(allSections.map((s) => s.grade))).sort(),
+    [allSections],
+  );
+  const sectionsForGrade = useMemo(
+    () => (grade ? Array.from(new Set(allSections.filter((s) => s.grade === grade).map((s) => s.section))).sort() : []),
+    [allSections, grade],
+  );
+
+  // Auto-pick first grade / section once loaded
+  useEffect(() => {
+    if (!grade && grades.length) setGrade(grades[0]);
+  }, [grades, grade]);
+  useEffect(() => {
+    if (grade && sectionsForGrade.length && (!section || !sectionsForGrade.includes(section))) {
+      setSection(sectionsForGrade[0]);
+    }
+  }, [grade, sectionsForGrade, section]);
+
+  const isGrade8 = grade === "8";
+  const tabs: TabDef[] = isGrade8
+    ? [{ key: "ministry", title: "Ministry", icon: Award, render: () => <MinistrySection /> }]
+    : [
+        { key: "home", title: "Home", icon: Home, render: () => <HomeSection grade={grade} section={section} totalStudentsQueryKey={["students-count", school?.id, grade, section]} schoolId={school?.id ?? ""} /> },
+        { key: "students", title: "Students", icon: Users, render: () => <StudentsSection schoolId={school?.id ?? ""} grade={grade} section={section} /> },
+        { key: "report", title: "Report Card", icon: ScrollText, render: () => <ReportCardSection schoolId={school?.id ?? ""} grade={grade} section={section} /> },
+      ];
 
   // Telegram-link gate
   const check = useServerFn(checkTelegramLink);
@@ -81,23 +106,42 @@ function SchoolPage() {
     else navigate({ to: "/auth" });
   }
 
-  if (!hasData) {
+  if (schoolQ.isLoading || sectionsQ.isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-sm text-muted-foreground">
+        Loading school…
+      </div>
+    );
+  }
+
+  if (!school) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6 text-center">
+        <div>
+          <h1 className="text-2xl font-bold">School not found</h1>
+          <p className="text-sm text-muted-foreground mt-1">This school isn't in the Manager registry yet.</p>
+          <Link to="/schools" className="text-primary hover:underline mt-3 inline-block">Back to schools</Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (grades.length === 0) {
     return (
       <div className="min-h-screen bg-background">
         <Header onLogout={handleLogout}>
           <SchoolBadge school={school} grade={grade} />
         </Header>
-        <GradeBar grade={grade} onChange={setGrade} />
         <main className="mx-auto max-w-4xl px-4 py-16 text-center">
           <div className="inline-flex h-14 w-14 items-center justify-center rounded-xl bg-primary text-primary-foreground mb-4">
             <GraduationCap className="h-7 w-7" />
           </div>
           <h1 className="text-2xl sm:text-3xl font-bold">{school.name}</h1>
-          <p className="text-sm text-muted-foreground mt-2">Dire Dawa • Grade {grade}</p>
+          <p className="text-sm text-muted-foreground mt-2">Dire Dawa</p>
           <Card className="p-10 mt-8">
             <p className="font-medium">No data yet</p>
             <p className="text-sm text-muted-foreground mt-1">
-              {stt ? `Grade ${grade} data will be added later.` : "Data for this school will be added later."}
+              No grades or sections have been added for this school in the Manager backend yet.
             </p>
           </Card>
         </main>
@@ -111,7 +155,14 @@ function SchoolPage() {
       <Header onLogout={handleLogout}>
         <SchoolBadge school={school} grade={grade} />
       </Header>
-      <GradeBar grade={grade} onChange={(g) => { setGrade(g); setTab(g === 8 ? "ministry" : "home"); }} />
+      <SelectorBar
+        grades={grades}
+        grade={grade}
+        onGrade={(g) => { setGrade(g); setTab(g === "8" ? "ministry" : "home"); setSection(null); }}
+        sections={sectionsForGrade}
+        section={section}
+        onSection={setSection}
+      />
 
       <nav className="border-b bg-background/60 backdrop-blur sticky top-0 z-10">
         <div className="mx-auto max-w-7xl px-4 flex gap-1 overflow-x-auto">
@@ -137,15 +188,20 @@ function SchoolPage() {
     </div>
   );
 
-  function GradeBar({ grade, onChange }: { grade: number; onChange: (g: number) => void }) {
+  function SelectorBar({
+    grades, grade, onGrade, sections, section, onSection,
+  }: {
+    grades: string[]; grade: string | null; onGrade: (g: string) => void;
+    sections: string[]; section: string | null; onSection: (s: string) => void;
+  }) {
     return (
-      <div className="border-b bg-background/80">
-        <div className="mx-auto max-w-7xl px-4 py-2 flex items-center gap-2 overflow-x-auto">
+      <div className="border-b bg-background/80 space-y-1 py-2">
+        <div className="mx-auto max-w-7xl px-4 flex items-center gap-2 overflow-x-auto">
           <span className="text-xs text-muted-foreground shrink-0 mr-1">Grade:</span>
-          {GRADES.map(g => (
+          {grades.map(g => (
             <button
               key={g}
-              onClick={() => onChange(g)}
+              onClick={() => onGrade(g)}
               className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-colors ${
                 grade === g ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/70"
               }`}
@@ -154,11 +210,27 @@ function SchoolPage() {
             </button>
           ))}
         </div>
+        {sections.length > 0 && (
+          <div className="mx-auto max-w-7xl px-4 flex items-center gap-2 overflow-x-auto">
+            <span className="text-xs text-muted-foreground shrink-0 mr-1">Section:</span>
+            {sections.map(s => (
+              <button
+                key={s}
+                onClick={() => onSection(s)}
+                className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-colors ${
+                  section === s ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/70"
+                }`}
+              >
+                Section {s}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     );
   }
 
-  function SchoolBadge({ school, grade }: { school: { name: string }; grade: number }) {
+  function SchoolBadge({ school, grade }: { school: { name: string }; grade: string | null }) {
     return (
       <div className="flex items-center gap-2 min-w-0">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
@@ -166,7 +238,7 @@ function SchoolPage() {
         </div>
         <div className="min-w-0">
           <p className="text-sm font-semibold leading-tight truncate">{school.name}</p>
-          <p className="text-xs text-muted-foreground">Dire Dawa • Grade {grade}</p>
+          <p className="text-xs text-muted-foreground">Dire Dawa{grade ? ` • Grade ${grade}` : ""}</p>
         </div>
       </div>
     );
