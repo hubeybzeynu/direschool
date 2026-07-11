@@ -1,0 +1,9 @@
+DROP FUNCTION IF EXISTS public.get_mid_result_by_password(text, text);
+DROP FUNCTION IF EXISTS public.get_final_result_by_password(text, text);
+DROP FUNCTION IF EXISTS public.get_report_card_by_password(text, text);
+DROP TABLE IF EXISTS public.mid_results CASCADE;
+DROP TABLE IF EXISTS public.final_results CASCADE;
+DROP TABLE IF EXISTS public.report_cards CASCADE;
+DROP TABLE IF EXISTS public.ministry_results CASCADE;
+DROP TABLE IF EXISTS public.students CASCADE;
+DROP TABLE IF EXISTS public.schools CASCADE;
