@@ -3,8 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { SCHOOLS } from "@/lib/schools";
-import { ST_THERESA_ID } from "@/lib/st-theresa";
+import { fetchSchools } from "@/lib/manager-client";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -38,12 +37,13 @@ function SchoolsPage() {
     record({}).catch(() => {});
   }, [record]);
 
+  const schoolsQ = useQuery({ queryKey: ["manager-schools"], queryFn: fetchSchools });
+  const schools = schoolsQ.data ?? [];
+
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
-    const list = term ? SCHOOLS.filter((s) => s.name.toLowerCase().includes(term)) : SCHOOLS;
-    // Put St. Theresa first
-    return list.slice().sort((a, b) => (a.id === ST_THERESA_ID ? -1 : b.id === ST_THERESA_ID ? 1 : 0));
-  }, [q]);
+    return term ? schools.filter((s) => s.name.toLowerCase().includes(term)) : schools;
+  }, [q, schools]);
 
   async function handleLogout() {
     const { error } = await supabase.auth.signOut();
@@ -79,7 +79,7 @@ function SchoolsPage() {
       <main className="mx-auto max-w-6xl px-4 py-10">
         <h1 className="text-3xl font-bold tracking-tight">Select your school</h1>
         <p className="text-muted-foreground mt-1">
-          {SCHOOLS.length} schools in Dire Dawa. Pick one to open its dashboard.
+          {schools.length} schools in Dire Dawa. Pick one to open its dashboard.
         </p>
 
         <div className="relative mt-6 max-w-md">
@@ -97,7 +97,7 @@ function SchoolsPage() {
             <Link
               key={s.id}
               to="/school/$schoolId"
-              params={{ schoolId: s.id }}
+              params={{ schoolId: s.slug }}
               className="group"
             >
               <Card className="p-4 h-full transition-colors hover:border-primary hover:bg-accent/40">
@@ -107,16 +107,19 @@ function SchoolsPage() {
                   </div>
                   <div className="min-w-0">
                     <p className="font-medium text-foreground break-words">{s.name}</p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Dire Dawa {s.id === ST_THERESA_ID && <span className="text-primary font-medium">• Live data</span>}
-                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">Dire Dawa</p>
                   </div>
                 </div>
               </Card>
             </Link>
           ))}
-          {filtered.length === 0 && (
-            <p className="text-sm text-muted-foreground col-span-full">No schools match your search.</p>
+          {schoolsQ.isLoading && (
+            <p className="text-sm text-muted-foreground col-span-full">Loading schools…</p>
+          )}
+          {!schoolsQ.isLoading && filtered.length === 0 && (
+            <p className="text-sm text-muted-foreground col-span-full">
+              {schools.length === 0 ? "No schools available yet." : "No schools match your search."}
+            </p>
           )}
         </div>
       </main>
