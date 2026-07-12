@@ -53,6 +53,27 @@ export type Database = {
         }
         Relationships: []
       }
+      telegram_bot_state: {
+        Row: {
+          awaiting: string | null
+          chat_id: number
+          data: Json
+          updated_at: string
+        }
+        Insert: {
+          awaiting?: string | null
+          chat_id: number
+          data?: Json
+          updated_at?: string
+        }
+        Update: {
+          awaiting?: string | null
+          chat_id?: number
+          data?: Json
+          updated_at?: string
+        }
+        Relationships: []
+      }
       telegram_links: {
         Row: {
           created_at: string
