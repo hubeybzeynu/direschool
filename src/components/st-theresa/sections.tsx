@@ -6,20 +6,39 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   GraduationCap, BookOpen, Award, Building2, Search, X, Download,
-  Lock, ChevronLeft, ChevronRight, Printer, HelpCircle, ArrowLeft,
+  Lock, Printer, HelpCircle, ArrowLeft, Trophy,
 } from "lucide-react";
 import {
   fetchStudents, findStudentByNo, fetchReportCardByStudent,
-  type ManagerStudent, type ManagerReportCard,
+  fetchReportCardsCohort, fetchTextbooksByGrade,
+  fetchMinistryByStudentNo, searchMinistryByName,
+  type ManagerStudent, type ManagerReportCard, type ManagerTextbook,
+  type ManagerMinistryResult, type ManagerSchool,
 } from "@/lib/manager-client";
+import {
+  REPORT_QUARTERS, REPORT_SUBJECTS,
+  isCardComplete, computePromotionStatus,
+  computeOverallRank, computeSubjectRank, subjectAverage, grandAverage,
+} from "@/lib/report-card";
 import { textbookPageInfo } from "@/data/textbook";
-import { resultImages, nameToIdMap } from "@/data/ministry";
 import { TextbookViewer } from "./textbook-viewer";
 
 const GH_RAW = "https://raw.githubusercontent.com/hubeybzeynu/grade9sts/main";
-export const ministryImageUrl = (path: string) =>
-  path.startsWith("http") ? path : `${GH_RAW}/public${path}`;
-const textbookPdfUrl = (slug: string) => `${GH_RAW}/public/textbooks/${slug}_grade_9.pdf`;
+const grade9SlugMap: Record<string, string> = {
+  Amharic: "amharic", English: "english", Mathematics: "mathematics", Physics: "physics",
+  Chemistry: "chemistry", Biology: "biology", Citizenship: "citizenship", ICT: "ict",
+  Geography: "geography", History: "history", Economics: "economics", HPE: "hpe",
+};
+const grade9FallbackTextbooks = (): ManagerTextbook[] =>
+  Object.keys(textbookPageInfo).map((subject, i) => ({
+    id: `g9-${subject}`,
+    grade: "9",
+    subject,
+    title: `${subject} — Grade 9`,
+    cover_url: null,
+    file_url: `${GH_RAW}/public/textbooks/${grade9SlugMap[subject] ?? subject.toLowerCase()}_grade_9.pdf`,
+    order_index: i,
+  }));
 
 type SectionProps = { schoolId: string; grade: string | null; section: string | null };
 
@@ -32,14 +51,20 @@ export function HomeSection(props: SectionProps & { totalStudentsQueryKey?: unkn
     enabled: !!schoolId && !!grade,
   });
   const students = q.data ?? [];
-  const showTextbooks = grade === "9";
-  const subjects = Object.keys(textbookPageInfo).length;
+  const tb = useQuery({
+    queryKey: ["textbooks", grade],
+    queryFn: () => fetchTextbooksByGrade(grade!),
+    enabled: !!grade,
+  });
+  const tbList = (tb.data && tb.data.length > 0)
+    ? tb.data
+    : (grade === "9" ? grade9FallbackTextbooks() : []);
 
   const stats = [
     { label: "Students", value: students.length, icon: GraduationCap },
     { label: "Section", value: section ?? "—", icon: Building2 },
     { label: "Grade", value: grade ?? "—", icon: Award },
-    { label: "Subjects", value: showTextbooks ? subjects : "—", icon: BookOpen },
+    { label: "Textbooks", value: tbList.length || "—", icon: BookOpen },
   ];
 
   return (
@@ -69,65 +94,85 @@ export function HomeSection(props: SectionProps & { totalStudentsQueryKey?: unkn
           </Card>
         ))}
       </div>
-
-      {showTextbooks && (
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-xl font-bold flex items-center gap-2">
-              <BookOpen className="h-5 w-5 text-primary" /> Textbooks
-            </h3>
-            <p className="text-xs text-muted-foreground">Grade 9 • {subjects} subjects</p>
-          </div>
-          <TextbooksSection />
-        </div>
-      )}
     </div>
   );
 }
 
-// ============================== TEXTBOOKS ==============================
-export function TextbooksSection() {
-  const subjects = Object.keys(textbookPageInfo);
+// ============================== TEXTBOOKS (per grade, shared) ==============================
+export function TextbooksSection({ grade }: { grade: string | null }) {
+  const q = useQuery({
+    queryKey: ["textbooks", grade],
+    queryFn: () => fetchTextbooksByGrade(grade!),
+    enabled: !!grade,
+  });
+  const books = (q.data && q.data.length > 0)
+    ? q.data
+    : (grade === "9" ? grade9FallbackTextbooks() : []);
+
   const colors = [
     "bg-cyan-500","bg-violet-500","bg-amber-500","bg-emerald-500","bg-rose-500",
     "bg-indigo-500","bg-lime-500","bg-sky-500","bg-fuchsia-500","bg-yellow-500",
     "bg-teal-500","bg-red-500",
   ];
-  const slugMap: Record<string, string> = {
-    Amharic: "amharic", English: "english", Mathematics: "mathematics", Physics: "physics",
-    Chemistry: "chemistry", Biology: "biology", Citizenship: "citizenship", ICT: "ict",
-    Geography: "geography", History: "history", Economics: "economics", HPE: "hpe",
-  };
   const [open, setOpen] = useState<{ subject: string; url: string } | null>(null);
   if (open) return <TextbookViewer subject={open.subject} url={open.url} onClose={() => setOpen(null)} />;
 
+  if (!grade) {
+    return <Card className="p-10 text-center text-sm text-muted-foreground">Pick a grade to see its textbooks.</Card>;
+  }
+  if (q.isLoading) {
+    return <Card className="p-10 text-center text-sm text-muted-foreground">Loading textbooks…</Card>;
+  }
+  if (!books.length) {
+    return (
+      <Card className="p-10 text-center">
+        <p className="font-medium">No textbooks yet</p>
+        <p className="text-sm text-muted-foreground mt-1">Grade {grade} textbooks haven't been added to the shared catalog.</p>
+      </Card>
+    );
+  }
+
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-      {subjects.map((s, i) => {
-        const slug = slugMap[s] ?? s.toLowerCase();
-        const url = textbookPdfUrl(slug);
-        return (
-          <Card key={s} className="p-5 flex flex-col">
-            <div className={`w-14 h-14 rounded-2xl ${colors[i % colors.length]} flex items-center justify-center mb-4`}>
-              <BookOpen className="w-7 h-7 text-white" />
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-xl font-bold flex items-center gap-2">
+          <BookOpen className="h-5 w-5 text-primary" /> Grade {grade} Textbooks
+        </h3>
+        <Badge variant="secondary">{books.length} {books.length === 1 ? "book" : "books"}</Badge>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        {books.map((b, i) => (
+          <Card key={b.id} className="p-5 flex flex-col">
+            <div className={`w-14 h-14 rounded-2xl ${colors[i % colors.length]} flex items-center justify-center mb-4 overflow-hidden`}>
+              {b.cover_url ? (
+                <img src={b.cover_url} alt={b.subject} className="w-full h-full object-cover" />
+              ) : (
+                <BookOpen className="w-7 h-7 text-white" />
+              )}
             </div>
-            <h3 className="text-lg font-bold">{s}</h3>
-            <p className="text-xs text-muted-foreground mb-4">Grade 9 Textbook</p>
+            <h3 className="text-lg font-bold">{b.subject}</h3>
+            <p className="text-xs text-muted-foreground mb-4">{b.title ?? `Grade ${b.grade} Textbook`}</p>
             <div className="flex gap-2 mt-auto">
-              <Button className="flex-1" onClick={() => setOpen({ subject: s, url })}>
-                <BookOpen className="w-4 h-4 mr-1.5" /> Open
-              </Button>
-              <a
-                href={url}
-                download
-                className="inline-flex items-center justify-center px-3 rounded-md border hover:bg-muted"
-              >
-                <Download className="w-4 h-4" />
-              </a>
+              {b.file_url ? (
+                <>
+                  <Button className="flex-1" onClick={() => setOpen({ subject: b.subject, url: b.file_url! })}>
+                    <BookOpen className="w-4 h-4 mr-1.5" /> Open
+                  </Button>
+                  <a
+                    href={b.file_url}
+                    download
+                    className="inline-flex items-center justify-center px-3 rounded-md border hover:bg-muted"
+                  >
+                    <Download className="w-4 h-4" />
+                  </a>
+                </>
+              ) : (
+                <p className="text-xs text-muted-foreground">No file linked.</p>
+              )}
             </div>
           </Card>
-        );
-      })}
+        ))}
+      </div>
     </div>
   );
 }
@@ -177,11 +222,7 @@ export function StudentsSection({ schoolId, grade, section }: SectionProps) {
 
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
         {filtered.map(s => (
-          <button
-            key={s.id}
-            onClick={() => setPicked(s)}
-            className="text-left"
-          >
+          <button key={s.id} onClick={() => setPicked(s)} className="text-left">
             <Card className="overflow-hidden group hover:border-primary transition-colors">
               <div className="aspect-[3/4] bg-muted">
                 {s.image_url ? (
@@ -257,16 +298,10 @@ function Row({ label, value }: { label: string; value: string | null | undefined
 }
 
 // ============================== REPORT CARD ==============================
-const RC_SUBJECTS = [
-  "Amharic","English","Mathematics","General Science","Social Studies",
-  "Citizenship Education","Performing & Visual Arts","Information Technology",
-  "Health & Physical Education","Career & Technical Education",
-];
 const RC_CONDUCT = [
   "Cooperates Willingly","Refrains from disturbing others","Respects Authorities & Elders",
   "Handles School & Personal Property Carefully","Listens Attentively","Attendance & Punctuality",
 ];
-const RC_QUARTERS = ["1st","2nd","3rd","4th"] as const;
 
 export function ReportCardSection({ schoolId, grade, section }: SectionProps) {
   const [studentNo, setStudentNo] = useState("");
@@ -350,11 +385,23 @@ function ReportCardView({
   card, student, onClose,
 }: { card: ManagerReportCard; student: ManagerStudent; onClose: () => void }) {
   const subjectKeys = card.subjects
-    ? Array.from(new Set([...RC_SUBJECTS, ...Object.keys(card.subjects)]))
-    : RC_SUBJECTS;
+    ? Array.from(new Set([...REPORT_SUBJECTS, ...Object.keys(card.subjects)]))
+    : REPORT_SUBJECTS;
   const conductKeys = card.conduct
     ? Array.from(new Set([...RC_CONDUCT, ...Object.keys(card.conduct)]))
     : RC_CONDUCT;
+
+  const cohortQ = useQuery({
+    queryKey: ["cohort", card.school_id, card.grade, card.section, card.school_year],
+    queryFn: () => fetchReportCardsCohort(card.school_id, card.grade!, card.section, card.school_year),
+    enabled: !!card.school_id && !!card.grade,
+  });
+  const cohort = cohortQ.data ?? [card];
+
+  const complete = isCardComplete(card);
+  const promotion = computePromotionStatus(card);
+  const overall = complete ? computeOverallRank(card, cohort) : null;
+  const grand = grandAverage(card);
 
   return (
     <Card className="overflow-hidden">
@@ -386,26 +433,62 @@ function ReportCardView({
             <thead className="bg-muted">
               <tr>
                 <th className="text-left p-2">Subject</th>
-                {RC_QUARTERS.map(q => <th key={q} className="p-2">{q}</th>)}
-                <th className="p-2">Avg</th>
+                {REPORT_QUARTERS.map(q => <th key={q} className="p-2">{q}</th>)}
+                <th className="p-2">Average</th>
+                <th className="p-2">Rank</th>
               </tr>
             </thead>
             <tbody>
               {subjectKeys.map(sub => {
                 const row = card.subjects?.[sub] ?? {};
-                const nums = RC_QUARTERS.map(q => Number(row[q] ?? 0));
-                const filled = nums.filter(n => n > 0);
-                const avg = filled.length ? (filled.reduce((a, b) => a + b, 0) / filled.length).toFixed(1) : "—";
+                const avg = subjectAverage(row);
+                const rank = complete ? computeSubjectRank(card, cohort, sub) : null;
                 return (
                   <tr key={sub} className="border-t">
                     <td className="p-2">{sub}</td>
-                    {RC_QUARTERS.map(q => <td key={q} className="p-2 text-center">{row[q] ?? "-"}</td>)}
-                    <td className="p-2 text-center font-semibold">{avg}</td>
+                    {REPORT_QUARTERS.map(q => <td key={q} className="p-2 text-center">{row[q] ?? "-"}</td>)}
+                    <td className="p-2 text-center font-semibold">{avg == null ? "—" : avg.toFixed(1)}</td>
+                    <td className="p-2 text-center text-muted-foreground">
+                      {rank ? `${rank.rank} / ${rank.total}` : "—"}
+                    </td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      {/* Overall + promotion */}
+      <div className="p-4 border-b grid sm:grid-cols-3 gap-3 text-sm">
+        <div className="rounded-md border p-3">
+          <p className="text-xs text-muted-foreground">Overall average</p>
+          <p className="text-xl font-bold">{grand == null ? "—" : grand.toFixed(2)}</p>
+        </div>
+        <div className="rounded-md border p-3">
+          <p className="text-xs text-muted-foreground flex items-center gap-1">
+            <Trophy className="h-3.5 w-3.5" /> Overall rank
+          </p>
+          <p className="text-xl font-bold">
+            {overall ? `${overall.rank} / ${overall.total}` : "—"}
+          </p>
+          {!complete && (
+            <p className="text-[11px] text-muted-foreground mt-1">Ranks appear once all 4 quarters are entered.</p>
+          )}
+        </div>
+        <div className="rounded-md border p-3">
+          <p className="text-xs text-muted-foreground">Promotion</p>
+          {promotion.state === "incomplete" ? (
+            <p className="text-xs mt-1">Promotion status will appear once the 4th quarter is released.</p>
+          ) : promotion.state === "promoted" ? (
+            <span className="inline-flex items-center gap-1 mt-1 px-2 py-1 rounded-full text-xs font-semibold bg-emerald-500/15 text-emerald-600 border border-emerald-500/30">
+              ✓ {promotion.label}
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 mt-1 px-2 py-1 rounded-full text-xs font-semibold bg-destructive/15 text-destructive border border-destructive/30">
+              ✕ {promotion.label}
+            </span>
+          )}
         </div>
       </div>
 
@@ -416,7 +499,7 @@ function ReportCardView({
             <thead className="bg-muted">
               <tr>
                 <th className="text-left p-2">Behavior</th>
-                {RC_QUARTERS.map(q => <th key={q} className="p-2">{q}</th>)}
+                {REPORT_QUARTERS.map(q => <th key={q} className="p-2">{q}</th>)}
               </tr>
             </thead>
             <tbody>
@@ -425,7 +508,7 @@ function ReportCardView({
                 return (
                   <tr key={k} className="border-t">
                     <td className="p-2">{k}</td>
-                    {RC_QUARTERS.map(q => <td key={q} className="p-2 text-center">{row[q] ?? "-"}</td>)}
+                    {REPORT_QUARTERS.map(q => <td key={q} className="p-2 text-center">{row[q] ?? "-"}</td>)}
                   </tr>
                 );
               })}
@@ -440,7 +523,7 @@ function ReportCardView({
           <thead className="bg-muted">
             <tr>
               <th className="text-left p-2">Metric</th>
-              {RC_QUARTERS.map(q => <th key={q} className="p-2">{q}</th>)}
+              {REPORT_QUARTERS.map(q => <th key={q} className="p-2">{q}</th>)}
             </tr>
           </thead>
           <tbody>
@@ -452,7 +535,7 @@ function ReportCardView({
             ].map(([label, obj]) => (
               <tr key={label as string} className="border-t">
                 <td className="p-2">{label as string}</td>
-                {RC_QUARTERS.map(q => (
+                {REPORT_QUARTERS.map(q => (
                   <td key={q} className="p-2 text-center">
                     {(obj as Record<string, number | null> | null)?.[q] ?? "-"}
                   </td>
@@ -473,55 +556,57 @@ function ReportCardView({
   );
 }
 
-// ============================== MINISTRY (Grade 8) ==============================
-// Search by name or registration No. Includes "forgot ID" name lookup with confirm.
+// ============================== MINISTRY RESULTS ==============================
+// Public viewer sourced from ministry_results in the Manager DB.
+// Search by student registration number, or by name (with confirm on ambiguity).
 export function MinistrySection() {
   const [mode, setMode] = useState<"id" | "name">("id");
   const [q, setQ] = useState("");
-  const [confirming, setConfirming] = useState<Array<{ name: string; id: string }> | null>(null);
-  const [current, setCurrent] = useState<{ name: string; id: string } | null>(null);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [confirming, setConfirming] = useState<Array<{ student: ManagerStudent; result: ManagerMinistryResult }> | null>(null);
+  const [current, setCurrent] = useState<{ result: ManagerMinistryResult; student: ManagerStudent | null; school: ManagerSchool | null } | null>(null);
 
-  const allEntries = useMemo(() => Object.entries(nameToIdMap), []);
-
-  function search() {
+  async function search() {
     setError(""); setConfirming(null); setCurrent(null);
     const term = q.trim();
     if (!term) { setError("Type something to search."); return; }
-
-    if (mode === "id") {
-      const img = resultImages[term as unknown as keyof typeof resultImages];
-      if (!img) { setError("No result found for that registration number."); return; }
-      const entry = allEntries.find(([, id]) => String(id) === term);
-      setCurrent({ name: entry?.[0] ?? "Unknown", id: term });
-      return;
+    setLoading(true);
+    try {
+      if (mode === "id") {
+        const found = await fetchMinistryByStudentNo(term);
+        if (!found) { setError("No ministry result found for that registration number."); return; }
+        setCurrent(found);
+      } else {
+        const matches = await searchMinistryByName(term);
+        if (!matches.length) { setError("No student matches that name."); return; }
+        if (matches.length === 1) {
+          const found = await fetchMinistryByStudentNo(matches[0].student.student_no ?? "");
+          if (found) setCurrent(found);
+          else setError("No ministry result attached to that student.");
+          return;
+        }
+        setConfirming(matches);
+      }
+    } catch (e: any) {
+      setError(e?.message ?? "Search failed.");
+    } finally {
+      setLoading(false);
     }
-
-    // Name search
-    const lower = term.toLowerCase();
-    const matches = allEntries
-      .filter(([name]) => name.toLowerCase().includes(lower))
-      .map(([name, id]) => ({ name, id: String(id) }));
-
-    if (matches.length === 0) { setError("No student matches that name."); return; }
-    if (matches.length === 1) { setCurrent(matches[0]); return; }
-    setConfirming(matches.slice(0, 20));
   }
-
-  const img = current ? resultImages[current.id as unknown as keyof typeof resultImages] : null;
 
   return (
     <div className="space-y-5">
       <Card className="p-5">
         <h3 className="font-bold text-lg mb-1 flex items-center gap-2">
-          <Award className="h-5 w-5 text-primary" /> Grade 8 Ministry Result
+          <Award className="h-5 w-5 text-primary" /> Ministry Result
         </h3>
         <p className="text-xs text-muted-foreground mb-3">
-          Search by registration number, or find your ID by name.
+          Search by student registration number, or find your ID by name.
         </p>
         <div className="flex gap-1 mb-3">
           <Button size="sm" variant={mode === "id" ? "default" : "outline"} onClick={() => { setMode("id"); setQ(""); setError(""); }}>
-            <Search className="h-3.5 w-3.5 mr-1" /> By Reg. No
+            <Search className="h-3.5 w-3.5 mr-1" /> By Student ID
           </Button>
           <Button size="sm" variant={mode === "name" ? "default" : "outline"} onClick={() => { setMode("name"); setQ(""); setError(""); }}>
             <HelpCircle className="h-3.5 w-3.5 mr-1" /> Forgot ID? Search by name
@@ -529,12 +614,14 @@ export function MinistrySection() {
         </div>
         <div className="flex gap-2">
           <Input
-            placeholder={mode === "id" ? "Registration number (e.g. 219335)" : "Type your name…"}
+            placeholder={mode === "id" ? "Student registration number" : "Type student name…"}
             value={q}
             onChange={e => setQ(e.target.value)}
             onKeyDown={e => e.key === "Enter" && search()}
           />
-          <Button onClick={search}><Search className="h-4 w-4 mr-1" /> Find</Button>
+          <Button onClick={search} disabled={loading}>
+            <Search className="h-4 w-4 mr-1" /> {loading ? "…" : "Find"}
+          </Button>
         </div>
         {error && <p className="text-xs text-destructive mt-2">{error}</p>}
       </Card>
@@ -545,44 +632,145 @@ export function MinistrySection() {
           <div className="space-y-2">
             {confirming.map(m => (
               <button
-                key={m.id}
-                onClick={() => { setCurrent(m); setConfirming(null); }}
+                key={m.result.id}
+                onClick={async () => {
+                  setConfirming(null);
+                  const found = await fetchMinistryByStudentNo(m.student.student_no ?? "");
+                  if (found) setCurrent(found);
+                }}
                 className="w-full text-left p-3 rounded-md border hover:border-primary hover:bg-accent/40 transition-colors"
               >
-                <p className="font-medium text-sm">Is "{m.name}"?</p>
-                <p className="text-xs text-muted-foreground">Reg. No: {m.id}</p>
+                <p className="font-medium text-sm">{m.student.full_name}</p>
+                <p className="text-xs text-muted-foreground">Reg. No: {m.student.student_no ?? "—"} • Grade {m.result.grade ?? "?"}</p>
               </button>
             ))}
           </div>
         </Card>
       )}
 
-      {current && (
-        <Card className="overflow-hidden">
-          <div className="p-4 flex items-center justify-between border-b">
-            <div className="min-w-0">
-              <p className="font-semibold truncate">{current.name}</p>
-              <p className="text-xs text-muted-foreground">Reg. No: {current.id}</p>
-            </div>
-            <div className="flex gap-2">
-              {img && (
-                <a href={ministryImageUrl(img)} download className="inline-flex items-center px-3 py-1.5 rounded-md border text-sm hover:bg-muted">
-                  <Download className="h-4 w-4 mr-1" /> Download
-                </a>
-              )}
-              <Button size="sm" variant="ghost" onClick={() => setCurrent(null)}><X className="h-4 w-4" /></Button>
-            </div>
-          </div>
-          {img ? (
-            <img src={ministryImageUrl(img)} alt={current.name} className="w-full" />
-          ) : (
-            <p className="p-10 text-center text-sm text-muted-foreground">No result image available.</p>
-          )}
-        </Card>
-      )}
+      {current && <MinistryResultCard payload={current} onClose={() => setCurrent(null)} />}
     </div>
   );
 }
 
-// Unused re-exports to avoid tree-shake-only warnings.
-export { ChevronLeft, ChevronRight };
+function MinistryResultCard({
+  payload, onClose,
+}: {
+  payload: { result: ManagerMinistryResult; student: ManagerStudent | null; school: ManagerSchool | null };
+  onClose: () => void;
+}) {
+  const { result, student, school } = payload;
+  const g = result.grade ?? student?.grade ?? "?";
+  const year = result.school_year ?? "";
+  const subjectRows = result.subjects ? Object.entries(result.subjects) : [];
+  const promoted = result.promotion_status === "promoted";
+  const detained = result.promotion_status === "detained";
+  const photo = result.photo_url ?? student?.image_url ?? null;
+
+  return (
+    <Card className="overflow-hidden">
+      <div className="p-4 flex items-center justify-between border-b bg-muted/30">
+        <div className="min-w-0">
+          <p className="font-semibold truncate">{student?.full_name ?? "Ministry Result"}</p>
+          <p className="text-xs text-muted-foreground">Reg. No: {result.student_no ?? student?.student_no ?? "—"}</p>
+        </div>
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" onClick={() => window.print()}>
+            <Printer className="h-4 w-4" />
+          </Button>
+          <Button size="sm" variant="ghost" onClick={onClose}><X className="h-4 w-4" /></Button>
+        </div>
+      </div>
+
+      {/* Result box, styled with portal tokens */}
+      <div className="p-6 space-y-5">
+        <div className="text-center space-y-1">
+          {school?.logo_url && (
+            <img src={school.logo_url} alt={school.name} className="h-14 w-14 mx-auto object-contain" />
+          )}
+          {school && (
+            <>
+              <p className="text-lg font-bold">{school.name}</p>
+              <p className="text-xs text-muted-foreground">Dire Dawa</p>
+            </>
+          )}
+          <p className="mt-2 text-sm font-semibold" lang="am">
+            የ{year || "…"} ዓ.ም. የ{g}ኛ ክፍል ማጠናቀቂያ ፈተና ውጤት
+          </p>
+          <p className="text-xs text-muted-foreground">Grade {g} National Exam Result{year ? ` — ${year} E.C.` : ""}</p>
+        </div>
+
+        <div className="grid sm:grid-cols-[140px_1fr] gap-4 items-start">
+          <div className="aspect-[3/4] w-full max-w-[140px] mx-auto sm:mx-0 rounded-md overflow-hidden border bg-muted">
+            {photo ? (
+              <img src={photo} alt={student?.full_name ?? "Candidate"} className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-muted-foreground">
+                <GraduationCap className="h-10 w-10" />
+              </div>
+            )}
+          </div>
+          <div className="space-y-2 text-sm">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-1 gap-x-4">
+              <Row label="Name" value={student?.full_name ?? "—"} />
+              <Row label="English" value={student?.english_name ?? null} />
+              <Row label="Reg. No" value={result.student_no ?? student?.student_no ?? null} />
+              <Row label="Grade" value={g} />
+              <Row label="School" value={school?.name ?? null} />
+              <Row label="Year (E.C.)" value={year || null} />
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <h4 className="font-semibold text-sm mb-2">Subjects</h4>
+          <div className="rounded-md border overflow-x-auto text-sm">
+            <table className="w-full">
+              <thead className="bg-muted">
+                <tr><th className="text-left p-2">Subject</th><th className="p-2 text-right">Mark</th></tr>
+              </thead>
+              <tbody>
+                {subjectRows.length === 0 ? (
+                  <tr><td colSpan={2} className="p-4 text-center text-muted-foreground text-xs">No subjects recorded.</td></tr>
+                ) : subjectRows.map(([k, v]) => (
+                  <tr key={k} className="border-t"><td className="p-2">{k}</td><td className="p-2 text-right font-semibold">{v ?? "—"}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div>
+          <h4 className="font-semibold text-sm mb-2">Totals</h4>
+          <div className="rounded-md border overflow-hidden text-sm">
+            <table className="w-full">
+              <tbody>
+                <tr className="border-b"><td className="p-2 text-muted-foreground">Total</td><td className="p-2 text-right font-semibold">{result.total ?? "—"}</td></tr>
+                <tr className="border-b"><td className="p-2 text-muted-foreground">Average</td><td className="p-2 text-right font-semibold">{result.average != null ? Number(result.average).toFixed(2) : "—"}</td></tr>
+                {result.percentile != null && (
+                  <tr className="border-b"><td className="p-2 text-muted-foreground">Percentile</td><td className="p-2 text-right font-semibold">{Number(result.percentile).toFixed(2)}</td></tr>
+                )}
+                <tr>
+                  <td className="p-2 text-muted-foreground">Status</td>
+                  <td className="p-2 text-right">
+                    {promoted ? (
+                      <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-600 border border-emerald-500/40">
+                        ✓ {result.promotion_label ?? "Promoted"}
+                      </span>
+                    ) : detained ? (
+                      <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-destructive/15 text-destructive border border-destructive/40">
+                        ✕ {result.promotion_label ?? "Detained"}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">{result.promotion_label ?? "—"}</span>
+                    )}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </Card>
+  );
+}
