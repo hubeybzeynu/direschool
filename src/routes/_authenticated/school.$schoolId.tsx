@@ -9,11 +9,11 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import {
-  ArrowLeft, GraduationCap, LogOut, Users, Award, Home, ScrollText,
+  ArrowLeft, GraduationCap, LogOut, Users, Award, Home, ScrollText, BookOpen,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
-  HomeSection, StudentsSection, ReportCardSection, MinistrySection,
+  HomeSection, StudentsSection, ReportCardSection, MinistrySection, TextbooksSection,
 } from "@/components/st-theresa/sections";
 
 export const Route = createFileRoute("/_authenticated/school/$schoolId")({
@@ -85,12 +85,20 @@ function SchoolPage() {
   }, [grade, sectionsForGrade, section]);
 
   const isGrade8 = grade === "8";
+  const commonTextbooks: TabDef = {
+    key: "textbooks", title: "Textbooks", icon: BookOpen,
+    render: () => <TextbooksSection grade={grade} />,
+  };
   const tabs: TabDef[] = isGrade8
-    ? [{ key: "ministry", title: "Ministry", icon: Award, render: () => <MinistrySection /> }]
+    ? [
+        { key: "ministry", title: "Ministry", icon: Award, render: () => <MinistrySection /> },
+        commonTextbooks,
+      ]
     : [
         { key: "home", title: "Home", icon: Home, render: () => <HomeSection grade={grade} section={section} totalStudentsQueryKey={["students-count", school?.id, grade, section]} schoolId={school?.id ?? ""} /> },
         { key: "students", title: "Students", icon: Users, render: () => <StudentsSection schoolId={school?.id ?? ""} grade={grade} section={section} /> },
         { key: "report", title: "Report Card", icon: ScrollText, render: () => <ReportCardSection schoolId={school?.id ?? ""} grade={grade} section={section} /> },
+        commonTextbooks,
       ];
 
   // Telegram-link gate
