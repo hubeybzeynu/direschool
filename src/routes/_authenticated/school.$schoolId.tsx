@@ -14,6 +14,7 @@ import {
 import { toast } from "sonner";
 import {
   HomeSection, StudentsSection, ReportCardSection, MinistrySection, TextbooksSection,
+  LockButton,
 } from "@/components/st-theresa/sections";
 
 export const Route = createFileRoute("/_authenticated/school/$schoolId")({
@@ -84,22 +85,23 @@ function SchoolPage() {
     }
   }, [grade, sectionsForGrade, section]);
 
-  const isGrade8 = grade === "8";
   const commonTextbooks: TabDef = {
     key: "textbooks", title: "Textbooks", icon: BookOpen,
     render: () => <TextbooksSection grade={grade} />,
   };
+  const isGrade8 = grade === "8";
+  const baseTabs: TabDef[] = [
+    { key: "home", title: "Home", icon: Home, render: () => <HomeSection grade={grade} section={section} totalStudentsQueryKey={["students-count", school?.id, grade, section]} schoolId={school?.id ?? ""} /> },
+    { key: "students", title: "Students", icon: Users, render: () => <StudentsSection schoolId={school?.id ?? ""} grade={grade} section={section} /> },
+    { key: "report", title: "Report Card", icon: ScrollText, render: () => <ReportCardSection schoolId={school?.id ?? ""} grade={grade} section={section} /> },
+  ];
   const tabs: TabDef[] = isGrade8
     ? [
+        ...baseTabs,
         { key: "ministry", title: "Ministry", icon: Award, render: () => <MinistrySection /> },
         commonTextbooks,
       ]
-    : [
-        { key: "home", title: "Home", icon: Home, render: () => <HomeSection grade={grade} section={section} totalStudentsQueryKey={["students-count", school?.id, grade, section]} schoolId={school?.id ?? ""} /> },
-        { key: "students", title: "Students", icon: Users, render: () => <StudentsSection schoolId={school?.id ?? ""} grade={grade} section={section} /> },
-        { key: "report", title: "Report Card", icon: ScrollText, render: () => <ReportCardSection schoolId={school?.id ?? ""} grade={grade} section={section} /> },
-        commonTextbooks,
-      ];
+    : [...baseTabs, commonTextbooks];
 
   // Telegram-link gate
   const check = useServerFn(checkTelegramLink);
@@ -166,7 +168,7 @@ function SchoolPage() {
       <SelectorBar
         grades={grades}
         grade={grade}
-        onGrade={(g) => { setGrade(g); setTab(g === "8" ? "ministry" : "home"); setSection(null); }}
+        onGrade={(g) => { setGrade(g); setTab("home"); setSection(null); }}
         sections={sectionsForGrade}
         section={section}
         onSection={setSection}
@@ -263,6 +265,7 @@ function Header({ onLogout, children }: { onLogout: () => void; children?: React
         </Link>
         <div className="flex-1 flex justify-center min-w-0">{children}</div>
         <div className="flex items-center gap-1 shrink-0">
+          <LockButton />
           <ThemeToggle />
           <Button variant="outline" size="sm" onClick={onLogout}>
             <LogOut className="h-4 w-4 sm:mr-2" /><span className="hidden sm:inline">Log out</span>

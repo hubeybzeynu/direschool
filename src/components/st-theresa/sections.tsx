@@ -1,12 +1,14 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { verifyStudentUnlock } from "@/lib/unlock.functions";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   GraduationCap, BookOpen, Award, Building2, Search, X, Download,
-  Lock, Printer, HelpCircle, ArrowLeft, Trophy,
+  Lock, Unlock, Printer, HelpCircle, ArrowLeft, Trophy,
 } from "lucide-react";
 import {
   fetchStudents, findStudentByNo, fetchReportCardByStudent,
@@ -39,6 +41,86 @@ const grade9FallbackTextbooks = (): ManagerTextbook[] =>
     file_url: `${GH_RAW}/public/textbooks/${grade9SlugMap[subject] ?? subject.toLowerCase()}_grade_9.pdf`,
     order_index: i,
   }));
+
+// ============================== SESSION UNLOCK (shared) ==============================
+const UNLOCK_KEY = "portal:student-view-unlocked";
+function isUnlocked(): boolean {
+  if (typeof window === "undefined") return false;
+  return sessionStorage.getItem(UNLOCK_KEY) === "1";
+}
+function setUnlocked(v: boolean) {
+  if (typeof window === "undefined") return;
+  if (v) sessionStorage.setItem(UNLOCK_KEY, "1");
+  else sessionStorage.removeItem(UNLOCK_KEY);
+  window.dispatchEvent(new Event("portal:unlock-change"));
+}
+export function useSessionUnlock() {
+  const [unlocked, set] = useState<boolean>(() => isUnlocked());
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const on = () => set(isUnlocked());
+    window.addEventListener("portal:unlock-change", on);
+    return () => window.removeEventListener("portal:unlock-change", on);
+  }, []);
+  return { unlocked, lock: () => { setUnlocked(false); set(false); } };
+}
+
+function UnlockPrompt({ onUnlocked, onCancel }: { onUnlocked: () => void; onCancel: () => void }) {
+  const verify = useServerFn(verifyStudentUnlock);
+  const [pwd, setPwd] = useState("");
+  const [err, setErr] = useState("");
+  const [shake, setShake] = useState(false);
+  const [busy, setBusy] = useState(false);
+  async function submit() {
+    if (busy) return;
+    setBusy(true); setErr("");
+    try {
+      const res = await verify({ data: { password: pwd } });
+      if (res.ok) { setUnlocked(true); onUnlocked(); }
+      else {
+        setErr(res.reason === "not_configured" ? "Unlock is not configured yet." : "Incorrect password.");
+        setShake(true); setTimeout(() => setShake(false), 400);
+      }
+    } finally { setBusy(false); }
+  }
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur p-4"
+         onKeyDown={e => e.key === "Escape" && onCancel()}>
+      <Card className={`w-full max-w-sm p-5 ${shake ? "animate-[shake_0.4s]" : ""}`}
+            style={{ animationName: shake ? "shake" : undefined }}>
+        <div className="flex items-center gap-2 mb-2">
+          <Lock className="h-4 w-4 text-primary" />
+          <h3 className="font-semibold text-sm">Unlock student view</h3>
+        </div>
+        <p className="text-xs text-muted-foreground mb-3">Enter the portal password to open report cards.</p>
+        <Input
+          autoFocus
+          type="password"
+          placeholder="Password"
+          value={pwd}
+          onChange={e => setPwd(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && submit()}
+        />
+        {err && <p className="text-xs text-destructive mt-2">{err}</p>}
+        <div className="flex justify-end gap-2 mt-4">
+          <Button variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>
+          <Button size="sm" onClick={submit} disabled={busy}>{busy ? "…" : "Unlock"}</Button>
+        </div>
+      </Card>
+      <style>{`@keyframes shake{10%,90%{transform:translateX(-2px)}20%,80%{transform:translateX(4px)}30%,50%,70%{transform:translateX(-8px)}40%,60%{transform:translateX(8px)}}`}</style>
+    </div>
+  );
+}
+
+export function LockButton() {
+  const { unlocked, lock } = useSessionUnlock();
+  if (!unlocked) return null;
+  return (
+    <Button variant="outline" size="sm" onClick={lock} title="Lock student view">
+      <Unlock className="h-4 w-4 sm:mr-2" /><span className="hidden sm:inline">Lock</span>
+    </Button>
+  );
+}
 
 type SectionProps = { schoolId: string; grade: string | null; section: string | null };
 
@@ -181,6 +263,9 @@ export function TextbooksSection({ grade }: { grade: string | null }) {
 export function StudentsSection({ schoolId, grade, section }: SectionProps) {
   const [q, setQ] = useState("");
   const [picked, setPicked] = useState<ManagerStudent | null>(null);
+  const [pendingUnlock, setPendingUnlock] = useState<ManagerStudent | null>(null);
+  const { unlocked } = useSessionUnlock();
+  const searchRef = (typeof window !== "undefined") ? (window as any).__portalSearchRef ?? null : null;
   const query = useQuery({
     queryKey: ["students", schoolId, grade, section],
     queryFn: () => fetchStudents(schoolId, grade!, section),
@@ -198,16 +283,41 @@ export function StudentsSection({ schoolId, grade, section }: SectionProps) {
     );
   }, [students, q]);
 
-  if (picked) return <StudentDetail student={picked} onBack={() => setPicked(null)} />;
+  function attemptOpen(s: ManagerStudent) {
+    if (isUnlocked()) setPicked(s);
+    else setPendingUnlock(s);
+  }
+
+  // "/" focuses search
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "/") return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      const el = document.getElementById("portal-student-search") as HTMLInputElement | null;
+      if (el) { e.preventDefault(); el.focus(); el.select(); }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  if (picked) return <StudentReportView student={picked} onBack={() => setPicked(null)} />;
 
   return (
     <div className="space-y-4">
+      {pendingUnlock && (
+        <UnlockPrompt
+          onUnlocked={() => { const s = pendingUnlock; setPendingUnlock(null); setPicked(s); }}
+          onCancel={() => setPendingUnlock(null)}
+        />
+      )}
       <div className="flex flex-wrap gap-3 items-center">
         <div className="relative flex-1 min-w-[220px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Search by name or student number…" value={q} onChange={e => setQ(e.target.value)} className="pl-9" />
+          <Input id="portal-student-search" placeholder='Search by name or student number…  (press "/" to focus)' value={q} onChange={e => setQ(e.target.value)} className="pl-9" />
         </div>
         <Badge variant="secondary">{filtered.length} students</Badge>
+        {unlocked && <Badge variant="outline" className="text-emerald-600 border-emerald-500/40">Unlocked</Badge>}
       </div>
 
       {query.isLoading && <Card className="p-10 text-center text-sm text-muted-foreground">Loading…</Card>}
@@ -222,7 +332,12 @@ export function StudentsSection({ schoolId, grade, section }: SectionProps) {
 
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
         {filtered.map(s => (
-          <button key={s.id} onClick={() => setPicked(s)} className="text-left">
+          <button
+            key={s.id}
+            onClick={() => attemptOpen(s)}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); attemptOpen(s); } }}
+            className="text-left focus:outline-none focus:ring-2 focus:ring-primary rounded-lg"
+          >
             <Card className="overflow-hidden group hover:border-primary transition-colors">
               <div className="aspect-[3/4] bg-muted">
                 {s.image_url ? (
@@ -284,6 +399,32 @@ function StudentDetail({ student, onBack }: { student: ManagerStudent; onBack: (
           </div>
         </div>
       </Card>
+    </div>
+  );
+}
+
+function StudentReportView({ student, onBack }: { student: ManagerStudent; onBack: () => void }) {
+  const cardQ = useQuery({
+    queryKey: ["report-card-by-student", student.id],
+    queryFn: () => fetchReportCardByStudent(student.id),
+  });
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <Button variant="ghost" size="sm" onClick={onBack}>
+          <ArrowLeft className="h-4 w-4 mr-2" /> Back to students
+        </Button>
+        <LockButton />
+      </div>
+      <StudentDetail student={student} onBack={onBack} />
+      {cardQ.isLoading && <Card className="p-8 text-center text-sm text-muted-foreground">Loading report card…</Card>}
+      {!cardQ.isLoading && !cardQ.data && (
+        <Card className="p-8 text-center">
+          <p className="font-medium">No report card yet</p>
+          <p className="text-sm text-muted-foreground mt-1">This student doesn't have a report card in the system yet.</p>
+        </Card>
+      )}
+      {cardQ.data && <ReportCardView card={cardQ.data} student={student} onClose={onBack} />}
     </div>
   );
 }
@@ -443,11 +584,16 @@ function ReportCardView({
                 const row = card.subjects?.[sub] ?? {};
                 const avg = subjectAverage(row);
                 const rank = complete ? computeSubjectRank(card, cohort, sub) : null;
+                const avgClass = avg == null
+                  ? ""
+                  : avg >= 60
+                    ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                    : "bg-destructive/10 text-destructive";
                 return (
                   <tr key={sub} className="border-t">
                     <td className="p-2">{sub}</td>
                     {REPORT_QUARTERS.map(q => <td key={q} className="p-2 text-center">{row[q] ?? "-"}</td>)}
-                    <td className="p-2 text-center font-semibold">{avg == null ? "—" : avg.toFixed(1)}</td>
+                    <td className={`p-2 text-center font-semibold ${avgClass}`}>{avg == null ? "—" : avg.toFixed(1)}</td>
                     <td className="p-2 text-center text-muted-foreground">
                       {rank ? `${rank.rank} / ${rank.total}` : "—"}
                     </td>
@@ -732,9 +878,20 @@ function MinistryResultCard({
               <tbody>
                 {subjectRows.length === 0 ? (
                   <tr><td colSpan={2} className="p-4 text-center text-muted-foreground text-xs">No subjects recorded.</td></tr>
-                ) : subjectRows.map(([k, v]) => (
-                  <tr key={k} className="border-t"><td className="p-2">{k}</td><td className="p-2 text-right font-semibold">{v ?? "—"}</td></tr>
-                ))}
+                ) : subjectRows.map(([k, v]) => {
+                  const n = typeof v === "number" ? v : Number(v);
+                  const cls = !Number.isFinite(n)
+                    ? ""
+                    : n >= 50
+                      ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                      : "bg-destructive/10 text-destructive";
+                  return (
+                    <tr key={k} className="border-t">
+                      <td className="p-2">{k}</td>
+                      <td className={`p-2 text-right font-semibold ${cls}`}>{v ?? "—"}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
