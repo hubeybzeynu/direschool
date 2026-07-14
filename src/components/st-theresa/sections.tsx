@@ -584,11 +584,16 @@ function ReportCardView({
                 const row = card.subjects?.[sub] ?? {};
                 const avg = subjectAverage(row);
                 const rank = complete ? computeSubjectRank(card, cohort, sub) : null;
+                const avgClass = avg == null
+                  ? ""
+                  : avg >= 60
+                    ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                    : "bg-destructive/10 text-destructive";
                 return (
                   <tr key={sub} className="border-t">
                     <td className="p-2">{sub}</td>
                     {REPORT_QUARTERS.map(q => <td key={q} className="p-2 text-center">{row[q] ?? "-"}</td>)}
-                    <td className="p-2 text-center font-semibold">{avg == null ? "—" : avg.toFixed(1)}</td>
+                    <td className={`p-2 text-center font-semibold ${avgClass}`}>{avg == null ? "—" : avg.toFixed(1)}</td>
                     <td className="p-2 text-center text-muted-foreground">
                       {rank ? `${rank.rank} / ${rank.total}` : "—"}
                     </td>
@@ -873,9 +878,20 @@ function MinistryResultCard({
               <tbody>
                 {subjectRows.length === 0 ? (
                   <tr><td colSpan={2} className="p-4 text-center text-muted-foreground text-xs">No subjects recorded.</td></tr>
-                ) : subjectRows.map(([k, v]) => (
-                  <tr key={k} className="border-t"><td className="p-2">{k}</td><td className="p-2 text-right font-semibold">{v ?? "—"}</td></tr>
-                ))}
+                ) : subjectRows.map(([k, v]) => {
+                  const n = typeof v === "number" ? v : Number(v);
+                  const cls = !Number.isFinite(n)
+                    ? ""
+                    : n >= 50
+                      ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                      : "bg-destructive/10 text-destructive";
+                  return (
+                    <tr key={k} className="border-t">
+                      <td className="p-2">{k}</td>
+                      <td className={`p-2 text-right font-semibold ${cls}`}>{v ?? "—"}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
