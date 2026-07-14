@@ -263,6 +263,9 @@ export function TextbooksSection({ grade }: { grade: string | null }) {
 export function StudentsSection({ schoolId, grade, section }: SectionProps) {
   const [q, setQ] = useState("");
   const [picked, setPicked] = useState<ManagerStudent | null>(null);
+  const [pendingUnlock, setPendingUnlock] = useState<ManagerStudent | null>(null);
+  const { unlocked } = useSessionUnlock();
+  const searchRef = (typeof window !== "undefined") ? (window as any).__portalSearchRef ?? null : null;
   const query = useQuery({
     queryKey: ["students", schoolId, grade, section],
     queryFn: () => fetchStudents(schoolId, grade!, section),
@@ -280,16 +283,41 @@ export function StudentsSection({ schoolId, grade, section }: SectionProps) {
     );
   }, [students, q]);
 
-  if (picked) return <StudentDetail student={picked} onBack={() => setPicked(null)} />;
+  function attemptOpen(s: ManagerStudent) {
+    if (isUnlocked()) setPicked(s);
+    else setPendingUnlock(s);
+  }
+
+  // "/" focuses search
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "/") return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      const el = document.getElementById("portal-student-search") as HTMLInputElement | null;
+      if (el) { e.preventDefault(); el.focus(); el.select(); }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  if (picked) return <StudentReportView student={picked} onBack={() => setPicked(null)} />;
 
   return (
     <div className="space-y-4">
+      {pendingUnlock && (
+        <UnlockPrompt
+          onUnlocked={() => { const s = pendingUnlock; setPendingUnlock(null); setPicked(s); }}
+          onCancel={() => setPendingUnlock(null)}
+        />
+      )}
       <div className="flex flex-wrap gap-3 items-center">
         <div className="relative flex-1 min-w-[220px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Search by name or student number…" value={q} onChange={e => setQ(e.target.value)} className="pl-9" />
+          <Input id="portal-student-search" placeholder='Search by name or student number…  (press "/" to focus)' value={q} onChange={e => setQ(e.target.value)} className="pl-9" />
         </div>
         <Badge variant="secondary">{filtered.length} students</Badge>
+        {unlocked && <Badge variant="outline" className="text-emerald-600 border-emerald-500/40">Unlocked</Badge>}
       </div>
 
       {query.isLoading && <Card className="p-10 text-center text-sm text-muted-foreground">Loading…</Card>}
@@ -304,7 +332,12 @@ export function StudentsSection({ schoolId, grade, section }: SectionProps) {
 
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
         {filtered.map(s => (
-          <button key={s.id} onClick={() => setPicked(s)} className="text-left">
+          <button
+            key={s.id}
+            onClick={() => attemptOpen(s)}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); attemptOpen(s); } }}
+            className="text-left focus:outline-none focus:ring-2 focus:ring-primary rounded-lg"
+          >
             <Card className="overflow-hidden group hover:border-primary transition-colors">
               <div className="aspect-[3/4] bg-muted">
                 {s.image_url ? (
