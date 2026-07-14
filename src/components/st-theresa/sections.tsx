@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { verifyStudentUnlock } from "@/lib/unlock.functions";
@@ -56,7 +56,7 @@ function setUnlocked(v: boolean) {
 }
 export function useSessionUnlock() {
   const [unlocked, set] = useState<boolean>(() => isUnlocked());
-  useMemo(() => {
+  useEffect(() => {
     if (typeof window === "undefined") return;
     const on = () => set(isUnlocked());
     window.addEventListener("portal:unlock-change", on);
