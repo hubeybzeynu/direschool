@@ -1,12 +1,14 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { verifyStudentUnlock } from "@/lib/unlock.functions";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   GraduationCap, BookOpen, Award, Building2, Search, X, Download,
-  Lock, Printer, HelpCircle, ArrowLeft, Trophy,
+  Lock, Unlock, Printer, HelpCircle, ArrowLeft, Trophy,
 } from "lucide-react";
 import {
   fetchStudents, findStudentByNo, fetchReportCardByStudent,
@@ -39,6 +41,86 @@ const grade9FallbackTextbooks = (): ManagerTextbook[] =>
     file_url: `${GH_RAW}/public/textbooks/${grade9SlugMap[subject] ?? subject.toLowerCase()}_grade_9.pdf`,
     order_index: i,
   }));
+
+// ============================== SESSION UNLOCK (shared) ==============================
+const UNLOCK_KEY = "portal:student-view-unlocked";
+function isUnlocked(): boolean {
+  if (typeof window === "undefined") return false;
+  return sessionStorage.getItem(UNLOCK_KEY) === "1";
+}
+function setUnlocked(v: boolean) {
+  if (typeof window === "undefined") return;
+  if (v) sessionStorage.setItem(UNLOCK_KEY, "1");
+  else sessionStorage.removeItem(UNLOCK_KEY);
+  window.dispatchEvent(new Event("portal:unlock-change"));
+}
+export function useSessionUnlock() {
+  const [unlocked, set] = useState<boolean>(() => isUnlocked());
+  useMemo(() => {
+    if (typeof window === "undefined") return;
+    const on = () => set(isUnlocked());
+    window.addEventListener("portal:unlock-change", on);
+    return () => window.removeEventListener("portal:unlock-change", on);
+  }, []);
+  return { unlocked, lock: () => { setUnlocked(false); set(false); } };
+}
+
+function UnlockPrompt({ onUnlocked, onCancel }: { onUnlocked: () => void; onCancel: () => void }) {
+  const verify = useServerFn(verifyStudentUnlock);
+  const [pwd, setPwd] = useState("");
+  const [err, setErr] = useState("");
+  const [shake, setShake] = useState(false);
+  const [busy, setBusy] = useState(false);
+  async function submit() {
+    if (busy) return;
+    setBusy(true); setErr("");
+    try {
+      const res = await verify({ data: { password: pwd } });
+      if (res.ok) { setUnlocked(true); onUnlocked(); }
+      else {
+        setErr(res.reason === "not_configured" ? "Unlock is not configured yet." : "Incorrect password.");
+        setShake(true); setTimeout(() => setShake(false), 400);
+      }
+    } finally { setBusy(false); }
+  }
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur p-4"
+         onKeyDown={e => e.key === "Escape" && onCancel()}>
+      <Card className={`w-full max-w-sm p-5 ${shake ? "animate-[shake_0.4s]" : ""}`}
+            style={{ animationName: shake ? "shake" : undefined }}>
+        <div className="flex items-center gap-2 mb-2">
+          <Lock className="h-4 w-4 text-primary" />
+          <h3 className="font-semibold text-sm">Unlock student view</h3>
+        </div>
+        <p className="text-xs text-muted-foreground mb-3">Enter the portal password to open report cards.</p>
+        <Input
+          autoFocus
+          type="password"
+          placeholder="Password"
+          value={pwd}
+          onChange={e => setPwd(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && submit()}
+        />
+        {err && <p className="text-xs text-destructive mt-2">{err}</p>}
+        <div className="flex justify-end gap-2 mt-4">
+          <Button variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>
+          <Button size="sm" onClick={submit} disabled={busy}>{busy ? "…" : "Unlock"}</Button>
+        </div>
+      </Card>
+      <style>{`@keyframes shake{10%,90%{transform:translateX(-2px)}20%,80%{transform:translateX(4px)}30%,50%,70%{transform:translateX(-8px)}40%,60%{transform:translateX(8px)}}`}</style>
+    </div>
+  );
+}
+
+export function LockButton() {
+  const { unlocked, lock } = useSessionUnlock();
+  if (!unlocked) return null;
+  return (
+    <Button variant="outline" size="sm" onClick={lock} title="Lock student view">
+      <Unlock className="h-4 w-4 sm:mr-2" /><span className="hidden sm:inline">Lock</span>
+    </Button>
+  );
+}
 
 type SectionProps = { schoolId: string; grade: string | null; section: string | null };
 
