@@ -403,6 +403,32 @@ function StudentDetail({ student, onBack }: { student: ManagerStudent; onBack: (
   );
 }
 
+function StudentReportView({ student, onBack }: { student: ManagerStudent; onBack: () => void }) {
+  const cardQ = useQuery({
+    queryKey: ["report-card-by-student", student.id],
+    queryFn: () => fetchReportCardByStudent(student.id),
+  });
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <Button variant="ghost" size="sm" onClick={onBack}>
+          <ArrowLeft className="h-4 w-4 mr-2" /> Back to students
+        </Button>
+        <LockButton />
+      </div>
+      <StudentDetail student={student} onBack={onBack} />
+      {cardQ.isLoading && <Card className="p-8 text-center text-sm text-muted-foreground">Loading report card…</Card>}
+      {!cardQ.isLoading && !cardQ.data && (
+        <Card className="p-8 text-center">
+          <p className="font-medium">No report card yet</p>
+          <p className="text-sm text-muted-foreground mt-1">This student doesn't have a report card in the system yet.</p>
+        </Card>
+      )}
+      {cardQ.data && <ReportCardView card={cardQ.data} student={student} onClose={onBack} />}
+    </div>
+  );
+}
+
 function Row({ label, value }: { label: string; value: string | null | undefined }) {
   return (
     <div className="flex gap-2">
