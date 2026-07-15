@@ -1,36 +1,7 @@
-type LovableErrorOptions = {
-  mechanism?: "manual" | "onerror" | "unhandledrejection" | "react_error_boundary";
-  handled?: boolean;
-  severity?: "error" | "warning" | "info";
+export const reportError = (error: any, context?: any) => {
+  console.error("[Local Log] Exception:", error, context);
 };
 
-type LovableEvents = {
-  captureException?: (
-    error: unknown,
-    context?: Record<string, unknown>,
-    options?: LovableErrorOptions,
-  ) => void;
+export const initializeTelemetry = () => {
+  console.log("[Direct Protocol] Telemetry bypassed.");
 };
-
-declare global {
-  interface Window {
-    __lovableEvents?: LovableEvents;
-  }
-}
-
-export function reportLovableError(error: unknown, context: Record<string, unknown> = {}) {
-  if (typeof window === "undefined") return;
-  window.__lovableEvents?.captureException?.(
-    error,
-    {
-      source: "react_error_boundary",
-      route: window.location.pathname,
-      ...context,
-    },
-    {
-      mechanism: "react_error_boundary",
-      handled: false,
-      severity: "error",
-    },
-  );
-}
