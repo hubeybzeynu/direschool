@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   GraduationCap, BookOpen, Award, Building2, Search, X, Download,
-  Lock, Unlock, Printer, HelpCircle, ArrowLeft, Trophy,
+  Lock, Unlock, Printer, HelpCircle, ArrowLeft, Trophy, FileText,
 } from "lucide-react";
 import {
   fetchStudents, findStudentByNo, fetchReportCardByStudent,
@@ -284,8 +284,7 @@ export function StudentsSection({ schoolId, grade, section }: SectionProps) {
   }, [students, q]);
 
   function attemptOpen(s: ManagerStudent) {
-    if (isUnlocked()) setPicked(s);
-    else setPendingUnlock(s);
+    setPicked(s);
   }
 
   // "/" focuses search
@@ -305,12 +304,7 @@ export function StudentsSection({ schoolId, grade, section }: SectionProps) {
 
   return (
     <div className="space-y-4">
-      {pendingUnlock && (
-        <UnlockPrompt
-          onUnlocked={() => { const s = pendingUnlock; setPendingUnlock(null); setPicked(s); }}
-          onCancel={() => setPendingUnlock(null)}
-        />
-      )}
+      {pendingUnlock && null}
       <div className="flex flex-wrap gap-3 items-center">
         <div className="relative flex-1 min-w-[220px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -404,10 +398,44 @@ function StudentDetail({ student, onBack }: { student: ManagerStudent; onBack: (
 }
 
 function StudentReportView({ student, onBack }: { student: ManagerStudent; onBack: () => void }) {
+  const { unlocked: teacherUnlocked } = useSessionUnlock();
+  const [wantCard, setWantCard] = useState(false);
+  const [cardUnlocked, setCardUnlocked] = useState(false);
+  const [pwd, setPwd] = useState("");
+  const [pwdErr, setPwdErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const verify = useServerFn(verifyStudentUnlock);
+
   const cardQ = useQuery({
     queryKey: ["report-card-by-student", student.id],
     queryFn: () => fetchReportCardByStudent(student.id),
+    enabled: wantCard,
   });
+  const card = cardQ.data ?? null;
+
+  // If no password is set on the card, or teacher already unlocked, skip prompt.
+  const noCardPwd = card ? !card.card_password : false;
+  const effectivelyUnlocked = cardUnlocked || teacherUnlocked || noCardPwd;
+
+  async function submitPwd() {
+    if (busy) return;
+    setBusy(true); setPwdErr("");
+    try {
+      if (card && card.card_password && pwd === card.card_password) {
+        setCardUnlocked(true);
+        return;
+      }
+      // Fallback: teacher's global unlock password
+      const res = await verify({ data: { password: pwd } });
+      if (res.ok) {
+        setUnlocked(true);
+        setCardUnlocked(true);
+      } else {
+        setPwdErr("Incorrect password.");
+      }
+    } finally { setBusy(false); }
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -417,14 +445,60 @@ function StudentReportView({ student, onBack }: { student: ManagerStudent; onBac
         <LockButton />
       </div>
       <StudentDetail student={student} onBack={onBack} />
-      {cardQ.isLoading && <Card className="p-8 text-center text-sm text-muted-foreground">Loading report card…</Card>}
-      {!cardQ.isLoading && !cardQ.data && (
+
+      {!wantCard && (
+        <Card className="p-5 flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <p className="font-semibold text-sm flex items-center gap-2">
+              <FileText className="h-4 w-4 text-primary" /> Academic report card
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Requires the student's card password, or the teacher password.
+            </p>
+          </div>
+          <Button onClick={() => setWantCard(true)}>
+            <FileText className="h-4 w-4 mr-2" /> View Report Card
+          </Button>
+        </Card>
+      )}
+
+      {wantCard && cardQ.isLoading && (
+        <Card className="p-8 text-center text-sm text-muted-foreground">Loading report card…</Card>
+      )}
+      {wantCard && !cardQ.isLoading && !card && (
         <Card className="p-8 text-center">
           <p className="font-medium">No report card yet</p>
           <p className="text-sm text-muted-foreground mt-1">This student doesn't have a report card in the system yet.</p>
         </Card>
       )}
-      {cardQ.data && <ReportCardView card={cardQ.data} student={student} onClose={onBack} />}
+
+      {wantCard && card && !effectivelyUnlocked && (
+        <Card className="p-5">
+          <div className="flex items-center gap-2 mb-2">
+            <Lock className="h-4 w-4 text-primary" />
+            <h3 className="font-semibold text-sm">Enter password to open report card</h3>
+          </div>
+          <p className="text-xs text-muted-foreground mb-3">
+            Use the <b>student's card password</b>, or the <b>teacher password</b> to unlock all cards.
+          </p>
+          <div className="flex gap-2">
+            <Input
+              autoFocus
+              type="password"
+              placeholder="Password"
+              value={pwd}
+              onChange={e => setPwd(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && submitPwd()}
+            />
+            <Button onClick={submitPwd} disabled={busy}>{busy ? "…" : "Unlock"}</Button>
+          </div>
+          {pwdErr && <p className="text-xs text-destructive mt-2">{pwdErr}</p>}
+        </Card>
+      )}
+
+      {wantCard && card && effectivelyUnlocked && (
+        <ReportCardView card={card} student={student} onClose={onBack} />
+      )}
     </div>
   );
 }
@@ -544,39 +618,65 @@ function ReportCardView({
   const overall = complete ? computeOverallRank(card, cohort) : null;
   const grand = grandAverage(card);
 
+  const schoolQ = useQuery({
+    queryKey: ["manager-school-by-id", card.school_id],
+    queryFn: async () => {
+      const { data } = await (await import("@/lib/manager-client")).manager
+        .from("schools").select("id, name, slug, logo_url").eq("id", card.school_id).maybeSingle();
+      return data as { id: string; name: string; slug: string; logo_url: string | null } | null;
+    },
+    enabled: !!card.school_id,
+  });
+  const school = schoolQ.data;
+
   return (
-    <Card className="overflow-hidden">
-      <div className="p-4 flex flex-wrap items-center gap-2 border-b bg-muted/30">
-        <div className="flex-1 min-w-0">
-          <p className="font-bold truncate">
-            {student.full_name} <span className="text-xs text-muted-foreground">#{student.student_no}</span>
-          </p>
-          <p className="text-xs text-muted-foreground">
-            {card.sex ?? student.gender ?? "—"} • Age {card.age ?? student.age ?? "—"} •
-            Grade {card.grade ?? student.grade ?? "—"} • {card.school_year ?? ""}
-          </p>
+    <Card className="overflow-hidden border-primary/20">
+      {/* Action bar */}
+      <div className="p-3 flex items-center justify-end gap-2 border-b bg-muted/30 no-print">
+        <Button size="sm" variant="outline" onClick={() => window.print()}><Printer className="h-4 w-4 mr-1" /> Print</Button>
+        <Button size="sm" variant="ghost" onClick={onClose}><X className="h-4 w-4" /></Button>
+      </div>
+
+      {/* Header — logo + school + STUDENTS REPORT CARD */}
+      <div className="px-6 pt-6 pb-4 text-center border-b">
+        <div className="flex items-center justify-center gap-3">
+          {school?.logo_url && (
+            <img src={school.logo_url} alt={school.name} className="w-12 h-12 rounded-full object-cover border border-border" />
+          )}
+          <div className="text-left">
+            <p className="text-lg font-bold" lang="am">{school?.name ?? "—"}</p>
+            <p className="text-xs text-muted-foreground">Dire Dawa</p>
+          </div>
         </div>
-        <Button size="sm" variant="outline" onClick={() => window.print()}><Printer className="h-4 w-4" /></Button>
-        <Button size="sm" variant="outline" onClick={onClose}><X className="h-4 w-4" /></Button>
+        <h3 className="text-lg font-bold mt-3 tracking-wide">STUDENTS REPORT CARD</h3>
       </div>
 
-      <div className="p-4 grid sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs border-b">
-        <div><span className="text-muted-foreground">Teacher:</span> {card.teacher_name || "—"}</div>
-        <div><span className="text-muted-foreground">Kebele:</span> {card.kebele || student.kebele || "—"}</div>
-        <div><span className="text-muted-foreground">House No:</span> {card.house_no || student.house_no || "—"}</div>
-        <div><span className="text-muted-foreground">Section:</span> {card.section ?? student.section ?? "—"}</div>
+      {/* Student info grid */}
+      <div className="p-6 grid grid-cols-2 md:grid-cols-3 gap-3 text-sm border-b">
+        <div><span className="text-muted-foreground">Name:</span> <strong>{student.full_name}</strong></div>
+        <div><span className="text-muted-foreground">Sex:</span> <strong>{card.sex ?? student.gender ?? "—"}</strong></div>
+        <div><span className="text-muted-foreground">Age:</span> <strong>{card.age ?? student.age ?? "—"}</strong></div>
+        <div><span className="text-muted-foreground">Kebele:</span> <strong>{card.kebele ?? student.kebele ?? "—"}</strong></div>
+        <div><span className="text-muted-foreground">H.No:</span> <strong>{card.house_no ?? student.house_no ?? "—"}</strong></div>
+        <div><span className="text-muted-foreground">Teacher:</span> <strong>{card.teacher_name ?? "—"}</strong></div>
+        <div><span className="text-muted-foreground">School Year:</span> <strong>{card.school_year ?? "—"}</strong></div>
+        <div><span className="text-muted-foreground">Grade:</span> <strong>{card.grade ?? student.grade ?? "—"}{card.section ?? student.section ?? ""}</strong></div>
+        <div><span className="text-muted-foreground">Reg No:</span> <strong>{student.student_no ?? "—"}</strong></div>
       </div>
 
-      <div className="p-4 border-b">
-        <h4 className="font-semibold text-sm mb-2">Subjects</h4>
-        <div className="rounded-md border overflow-x-auto text-xs">
+      {/* Subjects table */}
+      <div className="p-6 border-b">
+        <div className="overflow-x-auto text-sm">
           <table className="w-full">
-            <thead className="bg-muted">
-              <tr>
-                <th className="text-left p-2">Subject</th>
-                {REPORT_QUARTERS.map(q => <th key={q} className="p-2">{q}</th>)}
-                <th className="p-2">Average</th>
-                <th className="p-2">Rank</th>
+            <thead>
+              <tr className="bg-primary/10">
+                <th className="border border-border px-3 py-2 text-left">SUBJECT</th>
+                <th className="border border-border px-3 py-2 text-center">1st</th>
+                <th className="border border-border px-3 py-2 text-center">2nd</th>
+                <th className="border border-border px-3 py-2 text-center">3rd</th>
+                <th className="border border-border px-3 py-2 text-center">4th</th>
+                <th className="border border-border px-3 py-2 text-center">Avg</th>
+                <th className="border border-border px-3 py-2 text-center">Rank</th>
               </tr>
             </thead>
             <tbody>
@@ -590,11 +690,13 @@ function ReportCardView({
                     ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
                     : "bg-destructive/10 text-destructive";
                 return (
-                  <tr key={sub} className="border-t">
-                    <td className="p-2">{sub}</td>
-                    {REPORT_QUARTERS.map(q => <td key={q} className="p-2 text-center">{row[q] ?? "-"}</td>)}
-                    <td className={`p-2 text-center font-semibold ${avgClass}`}>{avg == null ? "—" : avg.toFixed(1)}</td>
-                    <td className="p-2 text-center text-muted-foreground">
+                  <tr key={sub}>
+                    <td className="border border-border px-3 py-2">{sub}</td>
+                    {REPORT_QUARTERS.map(q => (
+                      <td key={q} className="border border-border px-3 py-2 text-center">{row[q] ?? "-"}</td>
+                    ))}
+                    <td className={`border border-border px-3 py-2 text-center font-semibold ${avgClass}`}>{avg == null ? "—" : avg.toFixed(1)}</td>
+                    <td className="border border-border px-3 py-2 text-center text-muted-foreground">
                       {rank ? `${rank.rank} / ${rank.total}` : "—"}
                     </td>
                   </tr>
@@ -880,15 +982,11 @@ function MinistryResultCard({
                   <tr><td colSpan={2} className="p-4 text-center text-muted-foreground text-xs">No subjects recorded.</td></tr>
                 ) : subjectRows.map(([k, v]) => {
                   const n = typeof v === "number" ? v : Number(v);
-                  const cls = !Number.isFinite(n)
-                    ? ""
-                    : n >= 50
-                      ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-                      : "bg-destructive/10 text-destructive";
+                  void n;
                   return (
                     <tr key={k} className="border-t">
                       <td className="p-2">{k}</td>
-                      <td className={`p-2 text-right font-semibold ${cls}`}>{v ?? "—"}</td>
+                      <td className="p-2 text-right font-semibold">{v ?? "—"}</td>
                     </tr>
                   );
                 })}

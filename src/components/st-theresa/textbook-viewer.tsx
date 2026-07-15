@@ -14,7 +14,7 @@ import "react-pdf/dist/Page/TextLayer.css";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 
 // Use CDN worker matching the installed pdfjs-dist version
-pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+pdfjs.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
 type Item = { type: "unit" | "activity" | "exercise" | "review"; title: string; page: number };
 
@@ -32,6 +32,7 @@ export function TextbookViewer({ subject, url, onClose }: { subject: string; url
   const [scale, setScale] = useState(1.0);
   const [pageTexts, setPageTexts] = useState<Record<number, string>>({});
   const [items, setItems] = useState<Item[]>([]);
+  const [pdfError, setPdfError] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState<number>(800);
 
@@ -191,21 +192,41 @@ export function TextbookViewer({ subject, url, onClose }: { subject: string; url
 
       {/* PDF area */}
       <div ref={containerRef} className="flex-1 overflow-auto bg-muted flex justify-center">
-        <Document
-          file={url}
-          onLoadSuccess={onDocLoad}
-          loading={<p className="p-10 text-sm text-muted-foreground">Loading PDF…</p>}
-          error={<p className="p-10 text-sm text-destructive">Failed to load PDF. Try downloading.</p>}
-        >
-          {numPages > 0 && (
-            <Page
-              pageNumber={page}
-              width={width * scale}
-              renderTextLayer
-              renderAnnotationLayer={false}
-            />
-          )}
-        </Document>
+        {pdfError ? (
+          <iframe
+            src={url}
+            title={subject}
+            className="w-full h-full bg-background border-0"
+          />
+        ) : (
+          <Document
+            file={url}
+            onLoadSuccess={onDocLoad}
+            onLoadError={() => setPdfError(true)}
+            onSourceError={() => setPdfError(true)}
+            loading={<p className="p-10 text-sm text-muted-foreground">Loading PDF…</p>}
+            error={
+              <div className="p-6 text-center">
+                <p className="text-sm text-destructive mb-3">Couldn't render the PDF here.</p>
+                <button
+                  onClick={() => setPdfError(true)}
+                  className="px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm"
+                >
+                  Open in built-in viewer
+                </button>
+              </div>
+            }
+          >
+            {numPages > 0 && (
+              <Page
+                pageNumber={page}
+                width={width * scale}
+                renderTextLayer
+                renderAnnotationLayer={false}
+              />
+            )}
+          </Document>
+        )}
       </div>
 
       {/* Floating selection menu */}
