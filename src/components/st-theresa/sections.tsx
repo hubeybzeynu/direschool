@@ -618,39 +618,65 @@ function ReportCardView({
   const overall = complete ? computeOverallRank(card, cohort) : null;
   const grand = grandAverage(card);
 
+  const schoolQ = useQuery({
+    queryKey: ["manager-school-by-id", card.school_id],
+    queryFn: async () => {
+      const { data } = await (await import("@/lib/manager-client")).manager
+        .from("schools").select("id, name, slug, logo_url").eq("id", card.school_id).maybeSingle();
+      return data as { id: string; name: string; slug: string; logo_url: string | null } | null;
+    },
+    enabled: !!card.school_id,
+  });
+  const school = schoolQ.data;
+
   return (
-    <Card className="overflow-hidden">
-      <div className="p-4 flex flex-wrap items-center gap-2 border-b bg-muted/30">
-        <div className="flex-1 min-w-0">
-          <p className="font-bold truncate">
-            {student.full_name} <span className="text-xs text-muted-foreground">#{student.student_no}</span>
-          </p>
-          <p className="text-xs text-muted-foreground">
-            {card.sex ?? student.gender ?? "—"} • Age {card.age ?? student.age ?? "—"} •
-            Grade {card.grade ?? student.grade ?? "—"} • {card.school_year ?? ""}
-          </p>
+    <Card className="overflow-hidden border-primary/20">
+      {/* Action bar */}
+      <div className="p-3 flex items-center justify-end gap-2 border-b bg-muted/30 no-print">
+        <Button size="sm" variant="outline" onClick={() => window.print()}><Printer className="h-4 w-4 mr-1" /> Print</Button>
+        <Button size="sm" variant="ghost" onClick={onClose}><X className="h-4 w-4" /></Button>
+      </div>
+
+      {/* Header — logo + school + STUDENTS REPORT CARD */}
+      <div className="px-6 pt-6 pb-4 text-center border-b">
+        <div className="flex items-center justify-center gap-3">
+          {school?.logo_url && (
+            <img src={school.logo_url} alt={school.name} className="w-12 h-12 rounded-full object-cover border border-border" />
+          )}
+          <div className="text-left">
+            <p className="text-lg font-bold" lang="am">{school?.name ?? "—"}</p>
+            <p className="text-xs text-muted-foreground">Dire Dawa</p>
+          </div>
         </div>
-        <Button size="sm" variant="outline" onClick={() => window.print()}><Printer className="h-4 w-4" /></Button>
-        <Button size="sm" variant="outline" onClick={onClose}><X className="h-4 w-4" /></Button>
+        <h3 className="text-lg font-bold mt-3 tracking-wide">STUDENTS REPORT CARD</h3>
       </div>
 
-      <div className="p-4 grid sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs border-b">
-        <div><span className="text-muted-foreground">Teacher:</span> {card.teacher_name || "—"}</div>
-        <div><span className="text-muted-foreground">Kebele:</span> {card.kebele || student.kebele || "—"}</div>
-        <div><span className="text-muted-foreground">House No:</span> {card.house_no || student.house_no || "—"}</div>
-        <div><span className="text-muted-foreground">Section:</span> {card.section ?? student.section ?? "—"}</div>
+      {/* Student info grid */}
+      <div className="p-6 grid grid-cols-2 md:grid-cols-3 gap-3 text-sm border-b">
+        <div><span className="text-muted-foreground">Name:</span> <strong>{student.full_name}</strong></div>
+        <div><span className="text-muted-foreground">Sex:</span> <strong>{card.sex ?? student.gender ?? "—"}</strong></div>
+        <div><span className="text-muted-foreground">Age:</span> <strong>{card.age ?? student.age ?? "—"}</strong></div>
+        <div><span className="text-muted-foreground">Kebele:</span> <strong>{card.kebele ?? student.kebele ?? "—"}</strong></div>
+        <div><span className="text-muted-foreground">H.No:</span> <strong>{card.house_no ?? student.house_no ?? "—"}</strong></div>
+        <div><span className="text-muted-foreground">Teacher:</span> <strong>{card.teacher_name ?? "—"}</strong></div>
+        <div><span className="text-muted-foreground">School Year:</span> <strong>{card.school_year ?? "—"}</strong></div>
+        <div><span className="text-muted-foreground">Grade:</span> <strong>{card.grade ?? student.grade ?? "—"}{card.section ?? student.section ?? ""}</strong></div>
+        <div><span className="text-muted-foreground">Reg No:</span> <strong>{student.student_no ?? "—"}</strong></div>
       </div>
 
-      <div className="p-4 border-b">
-        <h4 className="font-semibold text-sm mb-2">Subjects</h4>
-        <div className="rounded-md border overflow-x-auto text-xs">
+      {/* Subjects table */}
+      <div className="p-6 border-b">
+        <div className="overflow-x-auto text-sm">
           <table className="w-full">
-            <thead className="bg-muted">
-              <tr>
-                <th className="text-left p-2">Subject</th>
-                {REPORT_QUARTERS.map(q => <th key={q} className="p-2">{q}</th>)}
-                <th className="p-2">Average</th>
-                <th className="p-2">Rank</th>
+            <thead>
+              <tr className="bg-primary/10">
+                <th className="border border-border px-3 py-2 text-left">SUBJECT</th>
+                <th className="border border-border px-3 py-2 text-center">1st</th>
+                <th className="border border-border px-3 py-2 text-center">2nd</th>
+                <th className="border border-border px-3 py-2 text-center">3rd</th>
+                <th className="border border-border px-3 py-2 text-center">4th</th>
+                <th className="border border-border px-3 py-2 text-center">Avg</th>
+                <th className="border border-border px-3 py-2 text-center">Rank</th>
               </tr>
             </thead>
             <tbody>
@@ -664,11 +690,13 @@ function ReportCardView({
                     ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
                     : "bg-destructive/10 text-destructive";
                 return (
-                  <tr key={sub} className="border-t">
-                    <td className="p-2">{sub}</td>
-                    {REPORT_QUARTERS.map(q => <td key={q} className="p-2 text-center">{row[q] ?? "-"}</td>)}
-                    <td className={`p-2 text-center font-semibold ${avgClass}`}>{avg == null ? "—" : avg.toFixed(1)}</td>
-                    <td className="p-2 text-center text-muted-foreground">
+                  <tr key={sub}>
+                    <td className="border border-border px-3 py-2">{sub}</td>
+                    {REPORT_QUARTERS.map(q => (
+                      <td key={q} className="border border-border px-3 py-2 text-center">{row[q] ?? "-"}</td>
+                    ))}
+                    <td className={`border border-border px-3 py-2 text-center font-semibold ${avgClass}`}>{avg == null ? "—" : avg.toFixed(1)}</td>
+                    <td className="border border-border px-3 py-2 text-center text-muted-foreground">
                       {rank ? `${rank.rank} / ${rank.total}` : "—"}
                     </td>
                   </tr>
