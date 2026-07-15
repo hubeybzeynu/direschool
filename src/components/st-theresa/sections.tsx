@@ -284,8 +284,7 @@ export function StudentsSection({ schoolId, grade, section }: SectionProps) {
   }, [students, q]);
 
   function attemptOpen(s: ManagerStudent) {
-    if (isUnlocked()) setPicked(s);
-    else setPendingUnlock(s);
+    setPicked(s);
   }
 
   // "/" focuses search
@@ -305,12 +304,7 @@ export function StudentsSection({ schoolId, grade, section }: SectionProps) {
 
   return (
     <div className="space-y-4">
-      {pendingUnlock && (
-        <UnlockPrompt
-          onUnlocked={() => { const s = pendingUnlock; setPendingUnlock(null); setPicked(s); }}
-          onCancel={() => setPendingUnlock(null)}
-        />
-      )}
+      {pendingUnlock && null}
       <div className="flex flex-wrap gap-3 items-center">
         <div className="relative flex-1 min-w-[220px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
