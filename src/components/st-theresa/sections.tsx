@@ -880,15 +880,11 @@ function MinistryResultCard({
                   <tr><td colSpan={2} className="p-4 text-center text-muted-foreground text-xs">No subjects recorded.</td></tr>
                 ) : subjectRows.map(([k, v]) => {
                   const n = typeof v === "number" ? v : Number(v);
-                  const cls = !Number.isFinite(n)
-                    ? ""
-                    : n >= 50
-                      ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-                      : "bg-destructive/10 text-destructive";
+                  void n;
                   return (
                     <tr key={k} className="border-t">
                       <td className="p-2">{k}</td>
-                      <td className={`p-2 text-right font-semibold ${cls}`}>{v ?? "—"}</td>
+                      <td className="p-2 text-right font-semibold">{v ?? "—"}</td>
                     </tr>
                   );
                 })}
