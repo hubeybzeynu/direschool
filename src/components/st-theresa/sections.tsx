@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   GraduationCap, BookOpen, Award, Building2, Search, X, Download,
-  Lock, Unlock, Printer, HelpCircle, ArrowLeft, Trophy,
+  Lock, Unlock, Printer, HelpCircle, ArrowLeft, Trophy, FileText,
 } from "lucide-react";
 import {
   fetchStudents, findStudentByNo, fetchReportCardByStudent,
@@ -398,10 +398,44 @@ function StudentDetail({ student, onBack }: { student: ManagerStudent; onBack: (
 }
 
 function StudentReportView({ student, onBack }: { student: ManagerStudent; onBack: () => void }) {
+  const { unlocked: teacherUnlocked } = useSessionUnlock();
+  const [wantCard, setWantCard] = useState(false);
+  const [cardUnlocked, setCardUnlocked] = useState(false);
+  const [pwd, setPwd] = useState("");
+  const [pwdErr, setPwdErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const verify = useServerFn(verifyStudentUnlock);
+
   const cardQ = useQuery({
     queryKey: ["report-card-by-student", student.id],
     queryFn: () => fetchReportCardByStudent(student.id),
+    enabled: wantCard,
   });
+  const card = cardQ.data ?? null;
+
+  // If no password is set on the card, or teacher already unlocked, skip prompt.
+  const noCardPwd = card ? !card.card_password : false;
+  const effectivelyUnlocked = cardUnlocked || teacherUnlocked || noCardPwd;
+
+  async function submitPwd() {
+    if (busy) return;
+    setBusy(true); setPwdErr("");
+    try {
+      if (card && card.card_password && pwd === card.card_password) {
+        setCardUnlocked(true);
+        return;
+      }
+      // Fallback: teacher's global unlock password
+      const res = await verify({ data: { password: pwd } });
+      if (res.ok) {
+        setUnlocked(true);
+        setCardUnlocked(true);
+      } else {
+        setPwdErr("Incorrect password.");
+      }
+    } finally { setBusy(false); }
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -411,14 +445,60 @@ function StudentReportView({ student, onBack }: { student: ManagerStudent; onBac
         <LockButton />
       </div>
       <StudentDetail student={student} onBack={onBack} />
-      {cardQ.isLoading && <Card className="p-8 text-center text-sm text-muted-foreground">Loading report card…</Card>}
-      {!cardQ.isLoading && !cardQ.data && (
+
+      {!wantCard && (
+        <Card className="p-5 flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <p className="font-semibold text-sm flex items-center gap-2">
+              <FileText className="h-4 w-4 text-primary" /> Academic report card
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Requires the student's card password, or the teacher password.
+            </p>
+          </div>
+          <Button onClick={() => setWantCard(true)}>
+            <FileText className="h-4 w-4 mr-2" /> View Report Card
+          </Button>
+        </Card>
+      )}
+
+      {wantCard && cardQ.isLoading && (
+        <Card className="p-8 text-center text-sm text-muted-foreground">Loading report card…</Card>
+      )}
+      {wantCard && !cardQ.isLoading && !card && (
         <Card className="p-8 text-center">
           <p className="font-medium">No report card yet</p>
           <p className="text-sm text-muted-foreground mt-1">This student doesn't have a report card in the system yet.</p>
         </Card>
       )}
-      {cardQ.data && <ReportCardView card={cardQ.data} student={student} onClose={onBack} />}
+
+      {wantCard && card && !effectivelyUnlocked && (
+        <Card className="p-5">
+          <div className="flex items-center gap-2 mb-2">
+            <Lock className="h-4 w-4 text-primary" />
+            <h3 className="font-semibold text-sm">Enter password to open report card</h3>
+          </div>
+          <p className="text-xs text-muted-foreground mb-3">
+            Use the <b>student's card password</b>, or the <b>teacher password</b> to unlock all cards.
+          </p>
+          <div className="flex gap-2">
+            <Input
+              autoFocus
+              type="password"
+              placeholder="Password"
+              value={pwd}
+              onChange={e => setPwd(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && submitPwd()}
+            />
+            <Button onClick={submitPwd} disabled={busy}>{busy ? "…" : "Unlock"}</Button>
+          </div>
+          {pwdErr && <p className="text-xs text-destructive mt-2">{pwdErr}</p>}
+        </Card>
+      )}
+
+      {wantCard && card && effectivelyUnlocked && (
+        <ReportCardView card={card} student={student} onClose={onBack} />
+      )}
     </div>
   );
 }
