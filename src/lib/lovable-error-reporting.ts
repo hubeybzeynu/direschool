@@ -1,7 +1,7 @@
 export const reportError = (error: any, context?: any) => {
-  console.error("[Local Log] Exception:", error, context);
+  console.error("[Local Server Log] Captured Exception:", error, context);
 };
 
 export const initializeTelemetry = () => {
-  console.log("[Direct Protocol] Telemetry bypassed.");
+  print("[Direct DB Protocol] Lovable tracking telemetry disabled.");
 };
